@@ -236,14 +236,17 @@ static void *mttcg_cpu_thread_fn(void *arg)
 
     assert(cpu->cpu_index < 128);
 
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(core_info_table[cpu->cpu_index].affinity_core_idx, &cpuset);
-    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 
+    if (affiliated_with_quantum) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(core_info_table[cpu->cpu_index].affinity_core_idx, &cpuset);
+        int res = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+        assert(res == 0 && "Failed to set thread affinity");
+    }
+    
     /* process any pending work */
     cpu->exit_request = 1;
-
 
     // uint64_t dumping_threshold = 300 * 1000 * 1000; // 300M
 
