@@ -3079,7 +3079,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             break;
         }
 
-        case SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_ZSTD_BASE:
+        case SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE:
         case SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA:
         case SNAPSHOT_FORMAT_EXTERNAL_ZSTD: {
             char snapshot_file_name[299];
@@ -3165,7 +3165,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     struct DirtyBitmapSnapshot *dirty_bitmap = NULL;
 
     // alright, if the format of the snapshot is incremental, we need to make the march-virt.ram not migratable.
-    if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_ZSTD_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
+    if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
         pause_snapshotting_main_memory(true);
         dirty_bitmap = memory_region_snapshot_and_clear_dirty(get_main_memory()->mr, 0, get_main_memory()->used_length, DIRTY_MEMORY_MIGRATION);
     }
@@ -3174,7 +3174,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     vm_state_size = qemu_file_transferred_noflush(f);
     ret2 = qemu_fclose(f);
 
-    if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_ZSTD_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
+    if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
         pause_snapshotting_main_memory(false);
     }
 
@@ -3186,14 +3186,14 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         goto the_end;
     }
 
-    if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_ZSTD_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
+    if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
         struct RAMBlock *main_ram = get_main_memory();
-        if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_ZSTD_BASE) {
+        if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE) {
             // We just dump the main memory to a zstd file.
             char dump_file_name[301];
-            snprintf(dump_file_name, sizeof(dump_file_name), "%s.basemem.zstd", sn->name);
+            snprintf(dump_file_name, sizeof(dump_file_name), "%s.basemem", sn->name);
 
-            QEMUFile *f = qemu_file_open_zstd_output(dump_file_name, errp);
+            QEMUFile *f = qemu_file_open_output(dump_file_name, errp);
             if (!f) {
                 error_setg(errp, "Could not open zstd file");
                 goto the_end;
@@ -3478,7 +3478,7 @@ bool load_snapshot(const char *name, const char *vmstate,
     snprintf(zstd_snapshot_name, sizeof(zstd_snapshot_name), "%s.zstd", sn.name);
     snprintf(xdelta_snapshot_name, sizeof(xdelta_snapshot_name), "%s.xdelta", sn.name);
     snprintf(raw_snapshot_name, sizeof(raw_snapshot_name), "%s", sn.name);
-    snprintf(incremental_base_name, sizeof(incremental_base_name), "%s.basemem.zstd", sn.name);
+    snprintf(incremental_base_name, sizeof(incremental_base_name), "%s.basemem", sn.name);
     snprintf(incremental_loc_name, sizeof(incremental_loc_name), "%s.loc", sn.name);
 
     if (ret < 0) {
@@ -3584,7 +3584,7 @@ bool load_snapshot(const char *name, const char *vmstate,
 
     // First, load the memory so that the virtio devices are not confused.
     if (is_incremental_base) {
-        QEMUFile *f = qemu_file_open_zstd_input(incremental_base_name, errp);
+        QEMUFile *f = qemu_file_open_input(incremental_base_name, errp);
         if (!f) {
             error_setg(errp, "Could not open VM state file");
             return false;
@@ -3633,8 +3633,8 @@ bool load_snapshot(const char *name, const char *vmstate,
         // First, we need to load the base memory.
         {
             char base_mem_file[300];
-            snprintf(base_mem_file, sizeof(base_mem_file), "%s.basemem.zstd", incremental_snapshot_context.base_name);
-            QEMUFile *f = qemu_file_open_zstd_input(base_mem_file, errp);
+            snprintf(base_mem_file, sizeof(base_mem_file), "%s.basemem", incremental_snapshot_context.base_name);
+            QEMUFile *f = qemu_file_open_input(base_mem_file, errp);
             if (!f) {
                 error_setg(errp, "Could not open the base memory file");
                 ret = -2;
