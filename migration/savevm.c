@@ -3684,7 +3684,6 @@ bool load_snapshot(const char *name, const char *vmstate,
         // set up the on-demand loading.
         main_ram->on_demand_file_name = g_new0(char, 256);
         main_ram->on_demand_index = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, NULL);
-        main_ram->on_demand_load_bmap = bitmap_new(main_ram->used_length / qemu_target_page_size());
 
         if (is_incremental_delta) {
             char loc_file[300];

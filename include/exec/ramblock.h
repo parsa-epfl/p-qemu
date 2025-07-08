@@ -77,7 +77,6 @@ struct RAMBlock {
     ram_addr_t postcopy_length;
 
     // loaded bitmap
-    unsigned long *on_demand_load_bmap;
     char *on_demand_file_name;
     GHashTable *on_demand_index;
     int on_demand_uffd_fd;
