@@ -3190,9 +3190,16 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
         struct RAMBlock *main_ram = get_main_memory();
         if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE) {
-            // We just dump the main memory to a zstd file.
             char dump_file_name[301];
-            snprintf(dump_file_name, sizeof(dump_file_name), "%s.basemem", sn->name);
+            snprintf(dump_file_name, sizeof(dump_file_name), "%s.mem", sn->name);
+            // create a folder for the snapshot.
+            if (mkdir(dump_file_name, 0755) < 0 && errno != EEXIST) {
+                error_setg(errp, "Could not create snapshot folder");
+                goto the_end;
+            }
+
+            // create the base image.
+            snprintf(dump_file_name, sizeof(dump_file_name), "%s.mem/base", sn->name);
 
             QEMUFile *f = qemu_file_open_output(dump_file_name, errp);
             if (!f) {
@@ -3223,25 +3230,12 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         } else {
             assert(incremental_snapshot_context.page_location != NULL); // a prior complete snapshot should have been taken.
 
-            // We are going to save two files:
-            // - <name>.deltamem.list, containing the list of dirty page numbers.
-            // - <name>.deltamem.bin, containing the dirty pages.
-            char list_file_name[305];
             char bin_file_name[305];
-            snprintf(list_file_name, sizeof(list_file_name), "%s-%lu.list", incremental_snapshot_context.base_name, incremental_snapshot_context.index);
-            snprintf(bin_file_name, sizeof(bin_file_name), "%s-%lu.delta", incremental_snapshot_context.base_name, incremental_snapshot_context.index);
-
-            // open the list file. It is a binary.
-            FILE *list_file = fopen(list_file_name, "wb");
-            if (!list_file) {
-                error_setg(errp, "Could not open list file");
-                goto the_end;
-            }
+            snprintf(bin_file_name, sizeof(bin_file_name), "%s.mem/%lu", incremental_snapshot_context.base_name, incremental_snapshot_context.index);
 
             FILE *bin_file = fopen(bin_file_name, "wb");
             if (!bin_file) {
                 error_setg(errp, "Could not open bin file");
-                fclose(list_file);
                 goto the_end;
             }
 
@@ -3253,9 +3247,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             uint64_t page_idx = 0;
             for (uint64_t i = 0; i < page_count; ++i) {
                 if (test_bit(i, dirty_bitmap->dirty)) {
-                    fwrite(&i, sizeof(i), 1, list_file); // little endian.
                     fwrite(main_ram->host + (dirty_bitmap->start + i * target_page_size), target_page_size, 1, bin_file);
-
 
                     struct page_location_pair_t *info = g_new0(struct page_location_pair_t, 1);
                     info->which_file = incremental_snapshot_context.index;
@@ -3272,9 +3264,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                 }
             }
 
-            fflush(list_file);
             fflush(bin_file);
-            fclose(list_file);
             fclose(bin_file);
             g_free(dirty_bitmap);
 
@@ -3481,7 +3471,7 @@ static void *uffd_on_demand_thread(void *main_ram) {
             snprintf(
                 incremental_file_name, 
                 sizeof(incremental_file_name), 
-                "%s-%lu.delta", 
+                "%s.mem/%lu", 
                 ram->on_demand_file_name,
                 info->which_file
             );
@@ -3499,7 +3489,7 @@ static void *uffd_on_demand_thread(void *main_ram) {
             // this means it is in the base file.
             // We need to load the base file.
             char base_file_name[350];
-            snprintf(base_file_name, sizeof(base_file_name), "%s.basemem", ram->on_demand_file_name);
+            snprintf(base_file_name, sizeof(base_file_name), "%s.mem/base", ram->on_demand_file_name);
 
             // open the base file and seek to the offset.
             checkpoint_file = fopen(base_file_name, "rb");
@@ -3581,7 +3571,7 @@ bool load_snapshot(const char *name, const char *vmstate,
     snprintf(zstd_snapshot_name, sizeof(zstd_snapshot_name), "%s.zstd", sn.name);
     snprintf(xdelta_snapshot_name, sizeof(xdelta_snapshot_name), "%s.xdelta", sn.name);
     snprintf(raw_snapshot_name, sizeof(raw_snapshot_name), "%s", sn.name);
-    snprintf(incremental_base_name, sizeof(incremental_base_name), "%s.basemem", sn.name);
+    snprintf(incremental_base_name, sizeof(incremental_base_name), "%s.mem/base", sn.name);
     snprintf(incremental_loc_name, sizeof(incremental_loc_name), "%s.loc", sn.name);
 
     if (ret < 0) {
@@ -3803,7 +3793,7 @@ bool load_snapshot(const char *name, const char *vmstate,
             // First, we need to load the base memory.
             {
                 char base_mem_file[300];
-                snprintf(base_mem_file, sizeof(base_mem_file), "%s.basemem", incremental_snapshot_context.base_name);
+                snprintf(base_mem_file, sizeof(base_mem_file), "%s.mem/base", incremental_snapshot_context.base_name);
                 QEMUFile *f = qemu_file_open_input(base_mem_file, errp);
                 if (!f) {
                     error_setg(errp, "Could not open the base memory file");
@@ -3863,7 +3853,7 @@ bool load_snapshot(const char *name, const char *vmstate,
                     GArray *array = value;
 
                     char delta_file_name[300];
-                    snprintf(delta_file_name, sizeof(delta_file_name), "%s-%lu.delta", incremental_snapshot_context.base_name, file_number);
+                    snprintf(delta_file_name, sizeof(delta_file_name), "%s.mem/%lu", incremental_snapshot_context.base_name, file_number);
 
                     FILE *delta_file = fopen(delta_file_name, "rb");
                     if (!delta_file) {
