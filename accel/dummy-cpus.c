@@ -57,8 +57,7 @@ static void *dummy_cpu_thread_fn(void *arg)
         qemu_sem_wait(&cpu->sem);
 #endif
         qemu_mutex_lock_iothread();
-        uint32_t dummy_res;
-        qemu_wait_io_event(cpu, &dummy_res);
+        qemu_wait_io_event(cpu);
     } while (!cpu->unplug);
 
     qemu_mutex_unlock_iothread();

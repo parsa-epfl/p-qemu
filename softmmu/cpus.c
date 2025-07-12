@@ -435,10 +435,9 @@ static uint64_t get_current_timestamp_ns(void) {
     return timestamp_ns;
 }
 
-uint64_t qemu_wait_io_event(CPUState *cpu, uint32_t *current_quantum_generation)
+void qemu_wait_io_event(CPUState *cpu)
 {
     bool slept = false;
-    uint64_t idle_latency = 0;
 
     while (cpu_thread_is_idle(cpu)) {
         if (!slept) {
@@ -467,8 +466,6 @@ uint64_t qemu_wait_io_event(CPUState *cpu, uint32_t *current_quantum_generation)
             // well, there is no need to timeout. This is stopped by the system.
             qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
         }
-
-        idle_latency = 1;
     }
     if (slept) {
         qemu_plugin_vcpu_resume_cb(cpu);
@@ -481,8 +478,6 @@ uint64_t qemu_wait_io_event(CPUState *cpu, uint32_t *current_quantum_generation)
     }
 #endif
     qemu_wait_io_event_common(cpu);
-
-    return idle_latency;
 }
 
 void cpus_kick_thread(CPUState *cpu)

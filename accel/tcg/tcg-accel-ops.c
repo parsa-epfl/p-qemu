@@ -29,6 +29,7 @@
 #include "sysemu/tcg.h"
 #include "sysemu/replay.h"
 #include "sysemu/cpu-timers.h"
+#include "sysemu/quantum.h"
 #include "qemu/main-loop.h"
 #include "qemu/guest-random.h"
 #include "qemu/timer.h"
@@ -40,6 +41,7 @@
 #include "tcg-accel-ops-mttcg.h"
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
+#include "tcg-accel-ops-quantum.h"
 
 /* common functionality among all TCG variants */
 
@@ -188,12 +190,16 @@ static inline void tcg_remove_all_breakpoints(CPUState *cpu)
 
 static void tcg_accel_ops_init(AccelOpsClass *ops)
 {
-    if (qemu_tcg_mttcg_enabled()) {
+    if (quantum_enabled()) {
+        ops->create_vcpu_thread = quantum_start_vcpu_thread;
+        ops->kick_vcpu_thread = quantum_kick_vcpu_thread;
+        ops->handle_interrupt = tcg_handle_interrupt;
+        quantum_initialize_barrier();
+        quantum_initialize_core_info_table("core_info.csv");
+    }  else if (qemu_tcg_mttcg_enabled()) {
         ops->create_vcpu_thread = mttcg_start_vcpu_thread;
         ops->kick_vcpu_thread = mttcg_kick_vcpu_thread;
         ops->handle_interrupt = tcg_handle_interrupt;
-        mttcg_initialize_barrier();
-        mttcg_initialize_core_info_table("core_info.csv");
     } else {
         ops->create_vcpu_thread = rr_start_vcpu_thread;
         ops->kick_vcpu_thread = rr_kick_vcpu_thread;
