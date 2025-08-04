@@ -250,7 +250,7 @@ static void generic_handle_interrupt(CPUState *cpu, int mask)
     cpu->interrupt_request |= mask;
 
     if (!qemu_cpu_is_self(cpu)) {
-        qemu_cpu_kick(cpu);
+        
     }
 }
 

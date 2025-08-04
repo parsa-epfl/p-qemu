@@ -216,6 +216,10 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu->sgi_sender_remaining_time_ns = 0;
     cpu->sgi_sender_quantum_generation = 0;
 
+    cpu->whether_spinning_on_quantum = false;
+    cpu->wakeup_during_quantum_spinning = 0;
+    cpu->wakeup_while_given_ts_is_smaller_than_before = 0;
+
     bool affiliated_with_quantum = cpu->ip100ns && quantum_enabled();
     assert(affiliated_with_quantum);
 
@@ -260,12 +264,16 @@ continue_to_run:
                     cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                     bool stop_request = false;
 
+                    cpu->whether_spinning_on_quantum = true;
+
                     uint64_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier, 
                         cpu->quantum_generation, 
                         &stop_request, 
                         cpu->touched_timer_during_last_quantum != 0
                     );
+
+                    cpu->whether_spinning_on_quantum = false;
                     
                     assert(new_generation == old_generation + 1);
                     cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
@@ -308,13 +316,16 @@ continue_to_run:
                     cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                     bool stop_request = false;
 
+                    cpu->whether_spinning_on_quantum = true;
+
                     uint64_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier, 
                         cpu->quantum_generation, 
                         &stop_request, 
                         cpu->touched_timer_during_last_quantum != 0
                     );
-        
+
+                    cpu->whether_spinning_on_quantum = false;
                     
                     assert(new_generation == old_generation + 1);
                     cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
@@ -347,6 +358,7 @@ continue_to_run:
 
                 // before going to sleep, I need to reset the sgi wakeup time so that others can pass the time.
                 cpu->sgi_sender_time_ns_valid = false;
+                cpu->whether_spinning_on_quantum = true;
 
                 qemu_mutex_unlock_iothread();
                 uint64_t new_generation = dynamic_barrier_polling_wait(
@@ -355,6 +367,8 @@ continue_to_run:
                     &stop_request, 
                     cpu->touched_timer_during_last_quantum != 0
                 );
+
+                cpu->whether_spinning_on_quantum = false;
 
                 qemu_mutex_lock_iothread();
                 if (new_generation == old_generation) {

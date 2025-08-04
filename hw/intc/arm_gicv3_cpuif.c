@@ -1859,31 +1859,31 @@ static void icc_generate_sgi(CPUARMState *env, GICv3CPUState *cs,
 
         if (quantum_enabled()) {
             // deliver the time of the interrupt source to the target CPU.
-            CPUState *cpu = cs->cpu;
-            uint64_t quantum_generation = cpu->quantum_generation;
-            uint64_t remaining_ns = (cpu->quantum_budget * 100) / cpu->ip100ns;
+            // CPUState *cpu = cs->cpu;
+            // uint64_t quantum_generation = cpu->quantum_generation;
+            // uint64_t remaining_ns = (cpu->quantum_budget * 100) / cpu->ip100ns;
             
-            CPUState *target_cpu = ocs->cpu;
-            if (target_cpu->sgi_sender_time_ns_valid) {
-                // keep the smallest remaining time.
-                target_cpu->sgi_sender_remaining_time_ns = MIN(target_cpu->sgi_sender_remaining_time_ns, remaining_ns);
-                // this must be within the same quantum.
-                if (target_cpu->sgi_sender_quantum_generation != quantum_generation) {
-                    qemu_log("target_cpu has received a sgi at quantum generation %lu, but another sgi has been sent at quantum generation %lu\n",
-                            target_cpu->sgi_sender_quantum_generation, quantum_generation);
-                    // assert(target_cpu->sgi_sender_quantum_generation == quantum_generation);
-                }
+            // CPUState *target_cpu = ocs->cpu;
+            // if (target_cpu->sgi_sender_time_ns_valid) {
+            //     // keep the smallest remaining time.
+            //     target_cpu->sgi_sender_remaining_time_ns = MIN(target_cpu->sgi_sender_remaining_time_ns, remaining_ns);
+            //     // this must be within the same quantum.
+            //     if (target_cpu->sgi_sender_quantum_generation != quantum_generation) {
+            //         qemu_log("target_cpu has received a sgi at quantum generation %lu, but another sgi has been sent at quantum generation %lu\n",
+            //                 target_cpu->sgi_sender_quantum_generation, quantum_generation);
+            //         // assert(target_cpu->sgi_sender_quantum_generation == quantum_generation);
+            //     }
                 
-            } else {
-                target_cpu->sgi_sender_time_ns_valid = true;
-                target_cpu->sgi_sender_remaining_time_ns = remaining_ns;
-                target_cpu->sgi_sender_quantum_generation = quantum_generation;
-                // only two cases are possible: (1) two threads are in the same quantum; (2) target cpu has not increased its quantum generation.
-                // assert(
-                //     target_cpu->quantum_generation == quantum_generation ||
-                //     target_cpu->quantum_generation == (quantum_generation - 1)
-                // );
-            }
+            // } else {
+            //     target_cpu->sgi_sender_time_ns_valid = true;
+            //     target_cpu->sgi_sender_remaining_time_ns = remaining_ns;
+            //     target_cpu->sgi_sender_quantum_generation = quantum_generation;
+            //     // only two cases are possible: (1) two threads are in the same quantum; (2) target cpu has not increased its quantum generation.
+            //     // assert(
+            //     //     target_cpu->quantum_generation == quantum_generation ||
+            //     //     target_cpu->quantum_generation == (quantum_generation - 1)
+            //     // );
+            // }
         }
 
         

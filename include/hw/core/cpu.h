@@ -462,7 +462,12 @@ struct CPUState {
     // State to query the latest timer interrupt deadline.
     uint64_t (*cb_next_timer_interrupt_time)(CPUState *);
 
-    uint64_t padding[2];
+    uint64_t wakeup_during_quantum_spinning;
+    uint64_t wakeup_while_given_ts_is_smaller_than_before;
+
+    // uint64_t padding[2];
+
+    uint64_t whether_spinning_on_quantum; // whther this core is waiting for the barrier.
 
     // State for the time passing through the IPI.
     uint64_t sgi_sender_time_ns_valid;

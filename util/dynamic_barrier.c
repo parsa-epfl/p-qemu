@@ -284,21 +284,70 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                 assert(barrier->count > 0);
                 barrier->count -= 1;
 
-                if (current_cpu->sgi_sender_time_ns_valid) {
-                    // this means the CPU thread is waken up by a SGI. The source CPU has the time.
-                    uint64_t sender_time = current_cpu->sgi_sender_remaining_time_ns;
-                    uint64_t sender_generation = current_cpu->sgi_sender_quantum_generation;
-                    assert(sender_generation == current_gen);
-                    int64_t new_budget_on_acceptance = (sender_time * current_cpu->ip100ns) / 100;
-                    
-                    // update the budget if the new budget is smaller than the current budget, meaning that the sleeping has happened.
-                    if (new_budget_on_acceptance < current_cpu->quantum_budget) {
-                        current_cpu->quantum_budget = new_budget_on_acceptance;
+                // I need to go over all CPUs and understand what is their time. 
+                CPUState *cpu;
+                double all_time = 0;
+                uint64_t cpu_count = 0;
+                CPU_FOREACH(cpu) {
+                    if (cpu == current_cpu) continue;
+                    if (cpu->whether_spinning_on_quantum && cpu->quantum_budget <= 0) {
+                        // This CPU is not running, so we can skip it.
+                        continue;
+                    }
+                    double this_cpu_time = cpu->quantum_budget * 100.0 / cpu->ip100ns;
+                    all_time += this_cpu_time;
+                    cpu_count += 1;
+                }
+
+                // Based on the time, calculate the new budget.
+                if (cpu_count > 0) {
+                    double average_time = all_time / cpu_count;
+                    // Now, we can calculate the new budget.
+                    int64_t new_budget = (int64_t)(average_time * current_cpu->ip100ns / 100.0);
+                    if (new_budget < 0) {
+                        new_budget = 0;
                     }
 
-                    // cleared, meaning that the time is updated and the thread is waken up.
-                    current_cpu->sgi_sender_time_ns_valid = false;
+                    if (new_budget != 0) {
+                        current_cpu->wakeup_during_quantum_spinning += 1;
+                        if (new_budget < current_cpu->quantum_budget) {
+                            current_cpu->wakeup_while_given_ts_is_smaller_than_before += 1;
+                        }
+                    }
+
+                    if (new_budget < current_cpu->quantum_budget) {
+                        // This means the CPU has been sleeping for a long time.
+                        current_cpu->quantum_budget = new_budget;
+                    }
+                } else {
+                    current_cpu->quantum_budget = 0;
                 }
+
+                // As long as the budget is not depleted, we can continue to run.
+                if (current_cpu->quantum_budget <= 0) {
+                    // No need to continue.
+                    dynamic_barrier_polling_release_lock(barrier);
+                    continue;
+                }
+
+
+                // 
+
+                // if (current_cpu->sgi_sender_time_ns_valid) {
+                //     // this means the CPU thread is waken up by a SGI. The source CPU has the time.
+                //     uint64_t sender_time = current_cpu->sgi_sender_remaining_time_ns;
+                //     uint64_t sender_generation = current_cpu->sgi_sender_quantum_generation;
+                //     assert(sender_generation == current_gen);
+                //     int64_t new_budget_on_acceptance = (sender_time * current_cpu->ip100ns) / 100;
+                    
+                //     // update the budget if the new budget is smaller than the current budget, meaning that the sleeping has happened.
+                //     if (new_budget_on_acceptance < current_cpu->quantum_budget) {
+                //         current_cpu->quantum_budget = new_budget_on_acceptance;
+                //     }
+
+                //     // cleared, meaning that the time is updated and the thread is waken up.
+                //     current_cpu->sgi_sender_time_ns_valid = false;
+                // }
 
                 // release the lock.
                 dynamic_barrier_polling_release_lock(barrier);
