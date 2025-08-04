@@ -294,7 +294,14 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                         // This CPU is not running, so we can skip it.
                         continue;
                     }
+
+
                     double this_cpu_time = cpu->quantum_budget * 100.0 / cpu->ip100ns;
+                    
+                    if (this_cpu_time < 0) {
+                        this_cpu_time = 0;
+                    }
+
                     all_time += this_cpu_time;
                     cpu_count += 1;
                 }
