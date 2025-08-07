@@ -169,7 +169,7 @@ static void dynamic_barrier_polling_release_lock(dynamic_barrier_polling_t *barr
     atomic_fetch_add(&barrier->lock.now_serving, 1);
 }
 
-uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32_t private_generation, bool *stop_request, bool check_time) {
+uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32_t private_generation, int *stop_request, bool check_time) {
     assert(current_cpu != NULL);
 
     dynamic_barrier_polling_acquire_lock(barrier);
@@ -188,6 +188,13 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         barrier->current_cycle += quantum_size;
         // barrier->stop_request = 0;
         bool broadcast_stop_request = 0;
+
+        if(!runstate_is_running()) {
+            // The machine is not running, so we can break.
+            *stop_request = 2;
+            dynamic_barrier_polling_release_lock(barrier);
+            return current_gen; // abandon the current quantum. 
+        }
 
         barrier->count = 0;
 
@@ -238,14 +245,22 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         // increase the generation and notify others.
         atomic_store(&barrier->return_value.one_64, *((uint64_t *)&return_value));
 
+        // printf("CPU %d increase the quantum barrier generation. Current Quantum Generation: %u\n", current_cpu->cpu_index, current_gen + 1);
+
         dynamic_barrier_polling_release_lock(barrier); // we can release the generation here.
 
-        *stop_request = broadcast_stop_request;
+        if (broadcast_stop_request) {
+            *stop_request = 1;
+        } else {
+            *stop_request = 0;
+        }
     } else {
         barrier->count += 1;
         dynamic_barrier_polling_release_lock(barrier);
 
         barrier_result_t barrier_return_value;
+
+        uint64_t spinning_count = 0;
 
         // You just need to wait.
         while (true) {
@@ -254,6 +269,23 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
             if (barrier_return_value.generation != current_gen) {
                 current_cpu->sgi_sender_time_ns_valid = false;
                 break;
+            }
+
+            ++spinning_count;
+
+            if (spinning_count % 1000000 == 0) {
+                spinning_count = 0;
+                // check the machine state.
+                if (!runstate_is_running()) {
+                    dynamic_barrier_polling_acquire_lock(barrier);
+                    // The machine is not running, so we can break.
+                    // Before breaking, we need to cancel the waiting count.
+                    barrier->count -= 1;
+                    assert(barrier->count < barrier->threshold);
+                    dynamic_barrier_polling_release_lock(barrier);
+                    *stop_request = 2;
+                    return current_gen; // abandon the current quantum. 
+                }
             }
 
             if (quantum_allow_interrupt_wakeup_inside) {
@@ -365,9 +397,12 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         }
 
         // read the stop request set by the last thread.
-        bool require_stop = barrier_return_value.stop_request;
+        if (barrier_return_value.stop_request) {
+            *stop_request = 1;
+        } else {
+            *stop_request = 0;
+        }
 
-        *stop_request = require_stop;
     }
 
     return current_gen + 1;

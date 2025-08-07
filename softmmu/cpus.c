@@ -464,7 +464,12 @@ void qemu_wait_io_event(CPUState *cpu)
             }
         } else {
             // well, there is no need to timeout. This is stopped by the system.
+            // RunState current_state = runstate_get();
+            // printf("Current runstate: %d\n", current_state);
             qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
+            cpu->quantum_budget = 0; // force entering the barrier.
+            cpu->quantum_budget_depleted = 1;
+            // printf("CPU %d is woken up by the runstate change. Current Quantum Generation: %lu\n", cpu->cpu_index, cpu->quantum_generation);
         }
     }
     if (slept) {
