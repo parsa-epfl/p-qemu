@@ -261,12 +261,13 @@ continue_to_run:
                 cpu->quantum_budget_depleted = false;
                 while (cpu->quantum_budget <= 0) {
                     uint64_t old_generation = cpu->quantum_generation;
+                    uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
                     cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                     int stop_request = 0;
 
                     cpu->whether_spinning_on_quantum = true;
 
-                    uint64_t new_generation = dynamic_barrier_polling_wait(
+                    uint32_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier, 
                         cpu->quantum_generation, 
                         &stop_request, 
@@ -276,17 +277,16 @@ continue_to_run:
                     cpu->whether_spinning_on_quantum = false;
 
                     if (stop_request != 2) {
-                        assert(new_generation == old_generation + 1);
+                        assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
-                        cpu->quantum_generation = new_generation;
+                        cpu->quantum_generation += 1;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
-                        assert(new_generation == old_generation);
+                        assert(new_generation == old_generation_low_32bit);
                         // clean the budget.
                         cpu->quantum_budget = 0;
-                        cpu->quantum_generation = old_generation;
-                        cpu->touched_timer_during_last_quantum = 0;
+                        cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
                     }
 
@@ -323,12 +323,13 @@ continue_to_run:
                 // We need to sync immediately to get the quantum budget. 
                 while (cpu->quantum_budget <= quantum_for_deduction) {
                     uint64_t old_generation = cpu->quantum_generation;
+                    uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
                     cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                     int stop_request = 0;
 
                     cpu->whether_spinning_on_quantum = true;
 
-                    uint64_t new_generation = dynamic_barrier_polling_wait(
+                    uint32_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier, 
                         cpu->quantum_generation, 
                         &stop_request, 
@@ -338,17 +339,16 @@ continue_to_run:
                     cpu->whether_spinning_on_quantum = false;
                     
                     if (stop_request != 2) {
-                        assert(new_generation == old_generation + 1);
+                        assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
-                        cpu->quantum_generation = new_generation;
+                        cpu->quantum_generation += 1;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
-                        assert(new_generation == old_generation);
+                        assert(new_generation == old_generation_low_32bit);
                         // clean the budget.
                         cpu->quantum_budget = 0;
-                        cpu->quantum_generation = old_generation;
-                        cpu->touched_timer_during_last_quantum = 0;
+                        cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
                     }
 
@@ -374,6 +374,7 @@ continue_to_run:
             cpu->quantum_budget_depleted = false;
             do {
                 uint64_t old_generation = cpu->quantum_generation;
+                uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
                 cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                 int stop_request = 0;
 
@@ -381,7 +382,7 @@ continue_to_run:
                 cpu->sgi_sender_time_ns_valid = false;
                 cpu->whether_spinning_on_quantum = true;
 
-                uint64_t new_generation = dynamic_barrier_polling_wait(
+                uint32_t new_generation = dynamic_barrier_polling_wait(
                     &quantum_barrier, 
                     cpu->quantum_generation, 
                     &stop_request, 
@@ -390,16 +391,14 @@ continue_to_run:
 
                 cpu->whether_spinning_on_quantum = false;
 
-                
-
                 if (stop_request != 2) {
-                    if (new_generation == old_generation) {
+                    if (new_generation == old_generation_low_32bit) {
                         // The CPU thread is waken up in the middle of the quantum
                         assert(quantum_allow_interrupt_wakeup_inside);
                         break;
                     }
                 
-                    assert(new_generation == old_generation + 1);
+                    assert(new_generation == old_generation_low_32bit + 1);
 
                     if (cpu->quantum_budget > 0) {
                         // this means the last quantum is not completely depleted. We need to deplete it before moving forward.
@@ -407,15 +406,14 @@ continue_to_run:
                     }
 
                     cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
-                    cpu->quantum_generation = new_generation;
+                    cpu->quantum_generation += 1;
                     cpu->touched_timer_during_last_quantum = 0;
                 } else {
                     // this means the vCPU quits due to the machine state change.
-                    assert(new_generation == old_generation);
+                    assert(new_generation == old_generation_low_32bit);
                     // clean the budget.
                     cpu->quantum_budget = 0;
-                    cpu->quantum_generation = old_generation;
-                    cpu->touched_timer_during_last_quantum = 0;
+                    cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                     cpu->quantum_budget_depleted = 1;
                 }
 

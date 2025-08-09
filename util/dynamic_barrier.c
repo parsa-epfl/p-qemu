@@ -209,9 +209,12 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
             qemu_mutex_unlock_iothread();
 
             int64_t deadline = qemu_clock_deadline_ns_virtual_clock_for_quantum(current_virtual_time);
-            assert(deadline >= 0);
 
-            barrier->next_virtual_time_deadline_in_ns = deadline;
+            if (deadline < 0) {
+                assert(!runstate_is_running());
+            } else {
+                barrier->next_virtual_time_deadline_in_ns = deadline;
+            }
         }
 
 
