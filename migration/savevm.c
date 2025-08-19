@@ -77,6 +77,7 @@
 #include "qemu/plugin-cyan.h"
 #include "migration/external_snapshot_util.h"
 #include <fcntl.h>
+#include <sys/mman.h>
 
 const unsigned int postcopy_ram_discard_version;
 
@@ -3744,6 +3745,9 @@ bool load_snapshot(const char *name, const char *vmstate,
     
         main_ram->on_demand_uffd_fd = uffd_create_fd(0, false);
         assert(main_ram->on_demand_uffd_fd >= 0); // uffd_create_fd() should not fail.
+
+        // force the OS to trigger page fault for this range of memory.
+        madvise(main_ram->host, main_ram->used_length, MADV_DONTNEED);
 
         assert(uffd_register_memory(
             main_ram->on_demand_uffd_fd, 
