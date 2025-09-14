@@ -50,7 +50,7 @@ arm_ss.add(when: 'TARGET_AARCH64', if_true: files(
   'pauth_helper.c',
   'sme_helper.c',
   'sve_helper.c',
-  'helper-a64-cyan.c'
+  'helper-a64-pf.c'
 ))
 
 arm_system_ss.add(files(

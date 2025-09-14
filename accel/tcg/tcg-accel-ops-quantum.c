@@ -25,7 +25,7 @@
 
 #include "qemu/osdep.h"
 #include "sysemu/tcg.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 #include "qemu/typedefs.h"
 #include "sysemu/replay.h"
 #include "sysemu/cpu-timers.h"

@@ -661,91 +661,9 @@ uint64_t qemu_plugin_end_code(void);
  */
 uint64_t qemu_plugin_entry_code(void);
 
-#define CYAN_API
+#define PF_API
 #define AARCH64_ONLY_API
 
-/**
- * qemu_plugin_set_running_flag() - setting the "running" flag of the current
- * CPU
- *
- * @is_running: The value of the flag.
- *
- * Some synchronization mechanism (e.g., exclusive execution) checks
- * this flag to make sure all CPUs are not executing instructions and
- * wait for all CPUs to be idle.
- *
- * In you plugin are using locks and synchronization which can block
- * execution, you should set the running flag to false before being
- * blocked to avoid deadlocks.
- */
-CYAN_API void qemu_plugin_set_running_flag(bool is_running);
-
-/**
- * qemu_plugin_is_current_cpu_can_run() - check whether the current CPU can
- * still continue to run instructions, i.e., not stopped by other threads like
- * quitting.
- *
- * Returns true if the current cpu can still run.
- *
- * This function is a wrapper of function `cpu_can_run`.
- */
-CYAN_API bool qemu_plugin_is_current_cpu_can_run(void);
-
-CYAN_API typedef int64_t (*qemu_plugin_cpu_clock_callback_t)(void);
-
-/**
- * qemu_plugin_register_cpu_clock_cb() - register the method for CPU to
- * calculate the time.
- *
- * @callback: The callback to provide cpu clock.
- *
- * Returns true if the registration is successful. Please note that only one
- * callback can be registered.
- *
- * This function overrides the internal QEMU function `cpu_get_clock_locked`,
- * and it cannot be used together with the icount mode.
- */
-CYAN_API bool
-qemu_plugin_register_cpu_clock_cb(qemu_plugin_cpu_clock_callback_t callback);
-
-/**
- * qemu_plugin_get_cpu_clock() - return the CPU clock time calculated by the
- * realtime elapsing.
- *
- * Useful when defining the new cpu clock function.
- */
-CYAN_API int64_t qemu_plugin_get_cpu_clock(void);
-
-/**
- * qemu_plugin_get_snapshot_cpu_clock() - return the CPU clock when the snapshot
- * is taken. Otherwise, it is zero.
- *
- * Useful when defining the new cpu clock function.
- */
-CYAN_API int64_t qemu_plugin_get_snapshot_cpu_clock(void);
-
-CYAN_API typedef void (*qemu_plugin_snapshot_cpu_clock_update_cb)(void);
-
-/**
- * qemu_plugin_register_snapshot_cpu_clock_update_cb() - register the callback
- * for updating the snapshot time.
- *
- * @callback: The callback to reset the VM clock.
- *
- * Returns true if the registration is successful. Please note that only one
- * callback can be registered.
- */
-
-CYAN_API bool qemu_plugin_register_snapshot_cpu_clock_update_cb(
-    qemu_plugin_snapshot_cpu_clock_update_cb callback);
-
-/**
- * qemu_plugin_cpu_is_tick_enabled() - return whether the CPU tick is enabled.
- *
- * Useful when defining the new virtual time function.
- */
-
-CYAN_API bool qemu_plugin_cpu_is_tick_enabled(void);
 
 /**
  * qemu_plugin_read_cpu_integer_register - returns the value of the given
@@ -755,7 +673,7 @@ CYAN_API bool qemu_plugin_cpu_is_tick_enabled(void);
  * will trigger assertion failure.
  */
 
-CYAN_API AARCH64_ONLY_API uint64_t
+PF_API AARCH64_ONLY_API uint64_t
 qemu_plugin_read_cpu_integer_register(int reg_index);
 
 /**
@@ -767,7 +685,7 @@ qemu_plugin_read_cpu_integer_register(int reg_index);
  * This function can be only called from threads that run a vCPU. Otherwise, it
  * will trigger assertion failure.
  */
-CYAN_API AARCH64_ONLY_API uint64_t qemu_plugin_read_ttbr_el1(int which_ttbr);
+PF_API AARCH64_ONLY_API uint64_t qemu_plugin_read_ttbr_el1(int which_ttbr);
 
 /**
  * qemu_plugin_read_tcr_el1 - returns the value of tcr_el1.
@@ -776,7 +694,7 @@ CYAN_API AARCH64_ONLY_API uint64_t qemu_plugin_read_ttbr_el1(int which_ttbr);
  * will trigger assertion failure.
  */
 
-CYAN_API AARCH64_ONLY_API uint64_t qemu_plugin_read_tcr_el1(void);
+PF_API AARCH64_ONLY_API uint64_t qemu_plugin_read_tcr_el1(void);
 
 /**
  * qemu_plugin_hwaddr_translate_walk_trace - returns the trace of walking the
@@ -793,7 +711,7 @@ CYAN_API AARCH64_ONLY_API uint64_t qemu_plugin_read_tcr_el1(void);
  * to optimize the storage.
  *
  */
-CYAN_API AARCH64_ONLY_API const uint64_t *
+PF_API AARCH64_ONLY_API const uint64_t *
 qemu_plugin_hwaddr_translate_walk_trace(
     const struct qemu_plugin_hwaddr *hwaddr);
 
@@ -806,7 +724,7 @@ qemu_plugin_hwaddr_translate_walk_trace(
  * This function will not trigger memory access plugin.
  */
 
-CYAN_API void qemu_plugin_read_physical_memory(uint64_t physical_address,
+PF_API void qemu_plugin_read_physical_memory(uint64_t physical_address,
                                                uint64_t size, void *buf);
 
 /**
@@ -818,7 +736,7 @@ CYAN_API void qemu_plugin_read_physical_memory(uint64_t physical_address,
  * This function will not trigger memory access plugin.
  */
 
-CYAN_API void qemu_plugin_write_physical_memory(uint64_t physical_address,
+PF_API void qemu_plugin_write_physical_memory(uint64_t physical_address,
                                                 uint64_t size, const void *buf);
 
 /**
@@ -836,7 +754,7 @@ CYAN_API void qemu_plugin_write_physical_memory(uint64_t physical_address,
  * was registered.
  */
 
-CYAN_API AARCH64_ONLY_API typedef void (*qemu_plugin_vcpu_branch_resolved_cb_t)(
+PF_API AARCH64_ONLY_API typedef void (*qemu_plugin_vcpu_branch_resolved_cb_t)(
     unsigned int vcpu_index, uint64_t pc, uint64_t target, uint32_t hint_flags);
 
 /**
@@ -850,7 +768,7 @@ CYAN_API AARCH64_ONLY_API typedef void (*qemu_plugin_vcpu_branch_resolved_cb_t)(
  * currently at most one callback can be registered.
  *
  */
-CYAN_API AARCH64_ONLY_API bool qemu_plugin_register_vcpu_branch_resolved_cb(
+PF_API AARCH64_ONLY_API bool qemu_plugin_register_vcpu_branch_resolved_cb(
     qemu_plugin_vcpu_branch_resolved_cb_t cb);
 
 /**
@@ -870,9 +788,9 @@ CYAN_API AARCH64_ONLY_API bool qemu_plugin_register_vcpu_branch_resolved_cb(
  * when registering the callback.
  *
  */
-CYAN_API uint64_t qemu_plugin_read_pc_vpn(void);
+PF_API uint64_t qemu_plugin_read_pc_vpn(void);
 
-CYAN_API typedef void (*qemu_plugin_snapshot_cb_t)(const char *);
+PF_API typedef void (*qemu_plugin_snapshot_cb_t)(const char *);
 
 /**
  * qemu_plugin_register_savevm_cb() - register a savevm callback
@@ -885,7 +803,7 @@ CYAN_API typedef void (*qemu_plugin_snapshot_cb_t)(const char *);
  * returns true if the callback is registered successfully. Please note at
  * currently at most one callback can be registered.
  */
-CYAN_API bool qemu_plugin_register_savevm_cb(qemu_plugin_snapshot_cb_t cb);
+PF_API bool qemu_plugin_register_savevm_cb(qemu_plugin_snapshot_cb_t cb);
 
 /**
  * qemu_plugin_register_loadvm_cb() - register a loadvm callback
@@ -896,14 +814,14 @@ CYAN_API bool qemu_plugin_register_savevm_cb(qemu_plugin_snapshot_cb_t cb);
  * returns true if the callback is registered successfully. Please note at
  * currently at most one callback can be registered.
  */
-CYAN_API bool qemu_plugin_register_loadvm_cb(qemu_plugin_snapshot_cb_t cb);
+PF_API bool qemu_plugin_register_loadvm_cb(qemu_plugin_snapshot_cb_t cb);
 
 /**
  * qemu_plugin_get_quantum_size - return the quantum size.
  *
  * Return 0 if the quantum is not enabled.
  */
-CYAN_API uint64_t qemu_plugin_get_quantum_size(void);
+PF_API uint64_t qemu_plugin_get_quantum_size(void);
 
 typedef enum qemu_plugin_snapshot_format_t {
   QEMU_PLUGIN_SNAPSHOT_FORMAT_INTERNAL_RAW = 0,
@@ -921,9 +839,9 @@ typedef enum qemu_plugin_snapshot_format_t {
  * This function is a wrapper of the QEMU function `save_snapshot`.
  * It prints the error directly to the console.
  */
-CYAN_API void qemu_plugin_savevm(const char *name, qemu_plugin_snapshot_format_t format);
+PF_API void qemu_plugin_savevm(const char *name, qemu_plugin_snapshot_format_t format);
 
-CYAN_API typedef void (*qemu_plugin_event_loop_poll_cb_t)(void);
+PF_API typedef void (*qemu_plugin_event_loop_poll_cb_t)(void);
 
 /**
  * qemu_plugin_register_event_loop_poll_cb() - register a callback to poll the
@@ -934,7 +852,7 @@ CYAN_API typedef void (*qemu_plugin_event_loop_poll_cb_t)(void);
  *
  * Please note at currently at most one callback can be registered.
  */
-CYAN_API bool
+PF_API bool
 qemu_plugin_register_event_loop_poll_cb(qemu_plugin_event_loop_poll_cb_t cb);
 
 /**
@@ -942,9 +860,9 @@ qemu_plugin_register_event_loop_poll_cb(qemu_plugin_event_loop_poll_cb_t cb);
  *
  * Returns true if the icount mode is enabled.
  */
-CYAN_API bool qemu_plugin_is_icount_mode(void);
+PF_API bool qemu_plugin_is_icount_mode(void);
 
-CYAN_API typedef bool (*qemu_plugin_periodic_check_cb_t)(
+PF_API typedef bool (*qemu_plugin_periodic_check_cb_t)(
     uint64_t passed_cycles);
 
 /**
@@ -968,7 +886,7 @@ CYAN_API typedef bool (*qemu_plugin_periodic_check_cb_t)(
  * `quantum_checking_period` cycles. Cycles are calculated from the provided IPC
  * and the instruction count.
  */
-CYAN_API bool
+PF_API bool
 qemu_plugin_register_periodic_check_cb(qemu_plugin_periodic_check_cb_t cb);
 
 /**
@@ -979,11 +897,8 @@ qemu_plugin_register_periodic_check_cb(qemu_plugin_periodic_check_cb_t cb);
  *
  * The unit, unfortunately, is centi-cycle.
  */
-CYAN_API uint64_t qemu_plugin_get_vcpu_vtime(uint32_t cpu_idx);
-CYAN_API void qemu_plugin_set_vcpu_vtime(uint32_t cpu_idx, uint64_t vtime);
-CYAN_API uint64_t qemu_plugin_get_vcpu_ip10ps(uint32_t cpu_idx);
+PF_API uint64_t qemu_plugin_get_vcpu_vtime(uint32_t cpu_idx);
 
-CYAN_API uint64_t qemu_plugin_cpu_get_next_deadline(uint32_t cpu_index);
 
 // typedef struct qemu_per_cpu_exchangable_state_t {
 //   uint64_t ipc;
@@ -1011,7 +926,7 @@ typedef void (*qemu_plugin_flushing_local_tlb_t)(
     uint64_t number_of_pages
 );
 
-CYAN_API bool qemu_plugin_register_flushing_local_tlb_cb(
+PF_API bool qemu_plugin_register_flushing_local_tlb_cb(
     qemu_plugin_flushing_local_tlb_t cb);
 
 #endif /* QEMU_QEMU_PLUGIN_H */

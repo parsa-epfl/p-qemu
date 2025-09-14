@@ -12,7 +12,7 @@
 #include "sysemu/cpus.h"
 #include "sysemu/runstate.h"
 #include "sysemu/quantum.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 
 
 
@@ -39,7 +39,7 @@ static void *report_time_peridically(void *arg) {
     return NULL;
 }
 
-// create a timestamp of each thread. 
+// create a timestamp of each thread.
 // static __thread uint64_t thread_start_quantum_timestamp = 0;
 
 // // Initialize the dynamic barrier
@@ -146,7 +146,7 @@ int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial
 
     barrier->current_cycle = 0;
     barrier->next_check_threshold = quantum_check_threshold;
-    
+
     return 0;
 }
 
@@ -154,7 +154,7 @@ int dynamic_barrier_polling_destroy(dynamic_barrier_polling_t *barrier) {
     for (int i = 0; i < 128; i++) {
         free_histogram(barrier->histogram[i]);
     }
-    
+
     return 0;
 }
 
@@ -183,7 +183,7 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
     }
 
     uint64_t waiting_count = barrier->count;
-    
+
     if (waiting_count == barrier->threshold - 1) {
         barrier->current_cycle += quantum_size;
         // barrier->stop_request = 0;
@@ -193,16 +193,16 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
             // The machine is not running, so we can break.
             *stop_request = 2;
             dynamic_barrier_polling_release_lock(barrier);
-            return current_gen; // abandon the current quantum. 
+            return current_gen; // abandon the current quantum.
         }
 
         barrier->count = 0;
 
-        // Advance the virtual clock by the quantum size. 
+        // Advance the virtual clock by the quantum size.
 
         int64_t current_virtual_time = increase_quantum_time();
         barrier->next_virtual_time_deadline_in_ns -= quantum_size;
-        
+
         if (barrier->timer_update_request || barrier->next_virtual_time_deadline_in_ns <= 0) {
             qemu_mutex_lock_iothread();
             qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
@@ -222,8 +222,8 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
 
         // Then, run the periodic check.
         if (barrier->next_check_threshold != 0 && barrier->current_cycle >= barrier->next_check_threshold) {
-            if (cyan_periodic_check_cb != NULL) {
-                if(cyan_periodic_check_cb(quantum_check_threshold)) {
+            if (pf_periodic_check_cb != NULL) {
+                if(pf_periodic_check_cb(quantum_check_threshold)) {
                     broadcast_stop_request = 1;
                     // Notify the main loop for the incoming snapshot event.
                     qemu_notify_event();
@@ -233,7 +233,7 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                         sched_yield();
                     }
                 }
-            } 
+            }
             barrier->next_check_threshold += quantum_check_threshold;
         }
 
@@ -287,13 +287,13 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                     assert(barrier->count < barrier->threshold);
                     dynamic_barrier_polling_release_lock(barrier);
                     *stop_request = 2;
-                    return current_gen; // abandon the current quantum. 
+                    return current_gen; // abandon the current quantum.
                 }
             }
 
             if (quantum_allow_interrupt_wakeup_inside) {
                 // Now, we need to check whether the CPU has work to do
-                
+
                 // How many credits do I have?
                 if (current_cpu->quantum_budget <= 0) {
                     // No need to continue.
@@ -304,12 +304,12 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                     continue;
                 }
 
-                // Well, this means the CPU has work to do. 
+                // Well, this means the CPU has work to do.
                 // Grab the lock.
                 dynamic_barrier_polling_acquire_lock(barrier);
 
                 if (barrier->return_value.two_32.generation != current_gen) {
-                    // The generation has changed, which mean the last quantum has been finished. 
+                    // The generation has changed, which mean the last quantum has been finished.
                     // This thread also needs to move to the next quantum.
                     dynamic_barrier_polling_release_lock(barrier);
                     break;
@@ -319,7 +319,7 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                 assert(barrier->count > 0);
                 barrier->count -= 1;
 
-                // I need to go over all CPUs and understand what is their time. 
+                // I need to go over all CPUs and understand what is their time.
                 CPUState *cpu;
                 double all_time = 0;
                 uint64_t cpu_count = 0;
@@ -332,7 +332,7 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
 
 
                     double this_cpu_time = cpu->quantum_budget * 100.0 / cpu->ip100ns;
-                    
+
                     if (this_cpu_time < 0) {
                         this_cpu_time = 0;
                     }
@@ -373,7 +373,7 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                 }
 
 
-                // 
+                //
 
                 // if (current_cpu->sgi_sender_time_ns_valid) {
                 //     // this means the CPU thread is waken up by a SGI. The source CPU has the time.
@@ -381,7 +381,7 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                 //     uint64_t sender_generation = current_cpu->sgi_sender_quantum_generation;
                 //     assert(sender_generation == current_gen);
                 //     int64_t new_budget_on_acceptance = (sender_time * current_cpu->ip100ns) / 100;
-                    
+
                 //     // update the budget if the new budget is smaller than the current budget, meaning that the sleeping has happened.
                 //     if (new_budget_on_acceptance < current_cpu->quantum_budget) {
                 //         current_cpu->quantum_budget = new_budget_on_acceptance;
@@ -394,7 +394,7 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                 // release the lock.
                 dynamic_barrier_polling_release_lock(barrier);
 
-                return current_gen; 
+                return current_gen;
             }
 
         }
@@ -435,7 +435,7 @@ int dynamic_barrier_polling_decrease_by_1(dynamic_barrier_polling_t *barrier) {
         barrier->current_cycle += quantum_size;
 
         if (barrier->next_check_threshold != 0 && barrier->current_cycle >= barrier->next_check_threshold) {
-            if (cyan_periodic_check_cb != NULL) cyan_periodic_check_cb(quantum_check_threshold);
+            if (pf_periodic_check_cb != NULL) pf_periodic_check_cb(quantum_check_threshold);
             barrier->next_check_threshold += quantum_check_threshold;
         }
 
@@ -452,7 +452,7 @@ int dynamic_barrier_polling_decrease_by_1(dynamic_barrier_polling_t *barrier) {
 
 void dynamic_barrier_polling_reset(dynamic_barrier_polling_t *barrier) {
     dynamic_barrier_polling_acquire_lock(barrier);
-    atomic_store(&barrier->return_value.two_32.generation, 0); // this should make everyone to not wait. 
+    atomic_store(&barrier->return_value.two_32.generation, 0); // this should make everyone to not wait.
     barrier->count = 0;
     dynamic_barrier_polling_release_lock(barrier);
 }

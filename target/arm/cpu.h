@@ -3283,13 +3283,13 @@ void arm_rebuild_hflags(CPUARMState *env);
 
 
 /**
- * arm_cpu_register_cyan_branch_cb: Register a callback for branch resolution.
- * 
- * This function is added by Cyan.
- * 
+ * arm_cpu_register_pf_branch_cb: Register a callback for branch resolution.
+ *
+ * This function is added by ParaFlex.
+ *
  * @cb: The callback function.
  */
-bool arm_cpu_register_cyan_branch_cb(void (*cb)(unsigned int vcpu_index, uint64_t pc, uint64_t target, uint32_t hint_flags));
+bool arm_cpu_register_pf_branch_cb(void (*cb)(unsigned int vcpu_index, uint64_t pc, uint64_t target, uint32_t hint_flags));
 
 /**
  * aa32_vfp_dreg:

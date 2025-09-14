@@ -74,7 +74,7 @@
 #include "sysemu/qtest.h"
 #include "options.h"
 
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 #include "migration/external_snapshot_util.h"
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -3245,9 +3245,8 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         }
     }
 
-    // TODO: Add a plugin callback here to dump snapshot as well.
-    if (cyan_savevm_cb) {
-        cyan_savevm_cb(sn->name);
+    if (pf_savevm_cb) {
+        pf_savevm_cb(sn->name);
     }
 
     /* The bdrv_all_create_snapshot() call that follows acquires the AioContext
@@ -3892,8 +3891,8 @@ bool load_snapshot(const char *name, const char *vmstate,
     }
 
     // Ask the plugin to load the snapshot.
-    if (cyan_loadvm_cb) {
-        cyan_loadvm_cb(sn.name);
+    if (pf_loadvm_cb) {
+        pf_loadvm_cb(sn.name);
     }
 
     aio_context_release(aio_context);

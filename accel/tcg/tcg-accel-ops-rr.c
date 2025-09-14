@@ -39,7 +39,7 @@
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 
 /* Kick all RR vCPUs */
 void rr_kick_vcpu_thread(CPUState *unused)
@@ -328,8 +328,8 @@ static void *rr_cpu_thread_fn(void *arg)
         if (!cpu) {
             cycle += cpu_budget;
             if (icount_checking_period != 0 && cycle >= next_check_threshold) {
-                if (cyan_periodic_check_cb) {
-                    if(cyan_periodic_check_cb(icount_checking_period)) {
+                if (pf_periodic_check_cb) {
+                    if(pf_periodic_check_cb(icount_checking_period)) {
                         pause_all_vcpus();
                     };
                 }

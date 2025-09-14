@@ -18,7 +18,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 #include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "qapi/type-helpers.h"
@@ -564,7 +564,7 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
     }
     assert_no_pages_locked();
 
-    // Also clean the quantum requirement, considering that the instruction is not directly finished. 
+    // Also clean the quantum requirement, considering that the instruction is not directly finished.
     // I know this is not a best practice, but we have to do so to avoid livelock...
     if (quantum_enabled() && cpu->ip100ns != 0) {
         cpu_virtual_time[cpu->cpu_index].vts += cpu->quantum_required * 10000 / cpu->ip100ns;
@@ -916,7 +916,7 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
         return true;
     }
 
-    // In the end, we check the quantum depletion. 
+    // In the end, we check the quantum depletion.
     if (cpu->quantum_budget_depleted && cpu->ip100ns != 0 && quantum_enabled()) {
         if (cpu->exception_index == -1) {
             cpu->exception_index = EXCP_QUANTUM;
@@ -967,7 +967,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     // Because we remove the icount_update, the executed budget should be calculated here.
     int64_t executed = (cpu->icount_budget -
         (cpu_neg(cpu)->icount_decr.u16.low + cpu->icount_extra));
-    
+
     cpu->icount_budget -= executed;
     /* Refill decrementer and continue execution.  */
     insns_left = MIN(0xffff, cpu->icount_budget);

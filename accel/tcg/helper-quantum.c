@@ -9,7 +9,7 @@
 #include "hw/core/cpu.h"
 #include "sysemu/cpu-timers.h"
 #include "sysemu/quantum.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 
 void HELPER(deduce_quantum)(CPUArchState *env) {
     assert(quantum_enabled());
@@ -45,7 +45,7 @@ uint32_t HELPER(check_and_deduce_quantum)(CPUArchState *env) {
     cpu_virtual_time[current_index].vts += current_cpu->quantum_required * 10000 / current_cpu->ip100ns;
 
     current_cpu->quantum_required = 0;
-    
+
     if (current_cpu->quantum_budget <= 0) {
         current_cpu->quantum_budget_depleted = 1;
         return true;

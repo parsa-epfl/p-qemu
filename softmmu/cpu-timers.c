@@ -27,7 +27,7 @@
 #include "migration/vmstate.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 #include "sysemu/cpus.h"
 #include "qemu/main-loop.h"
 #include "qemu/option.h"
@@ -78,11 +78,6 @@ int64_t cpu_get_clock_locked(void)
     if (quantum_enabled()) {
         return timers_state.virtual_clock_snapshot + timers_state.quantum_set_time;
     }
-
-    if (cyan_cpu_clock_cb) {
-        return cyan_cpu_clock_cb();
-    }
-
     int64_t time;
 
     time = timers_state.cpu_clock_offset;
@@ -127,14 +122,9 @@ void cpu_enable_ticks(void)
                 cpu_virtual_time[i].vts = timers_state.virtual_clock_snapshot;
             }
         }
-        
-        if (cyan_snapshot_cpu_clock_udpate_cb) {
-            cyan_snapshot_cpu_clock_udpate_cb();
-        }
-
         if (icount_enabled()) {
             // well, we have adjust the virtual_clock_snapshot time, so we should clean the current icount.
-            // by assigning offset, we cancel the value of the current icount. 
+            // by assigning offset, we cancel the value of the current icount.
             timers_state.qemu_icount_bias = - icount_to_ns(timers_state.qemu_icount);
         }
 
@@ -158,7 +148,7 @@ void cpu_disable_ticks(void)
                        &timers_state.vm_clock_lock);
     if (timers_state.cpu_ticks_enabled) {
         timers_state.cpu_ticks_offset += cpu_get_host_ticks();
-        
+
         if (icount_enabled()) {
             // record the current time calculated with icount.
             int64_t current_system_time = icount_to_ns(timers_state.qemu_icount) + timers_state.qemu_icount_bias + timers_state.virtual_clock_snapshot;
@@ -172,7 +162,7 @@ void cpu_disable_ticks(void)
             timers_state.quantum_set_time = 0;
         }
 
-        // record the time of the guest system. 
+        // record the time of the guest system.
         timers_state.cpu_ticks_enabled = 0;
     }
     seqlock_write_unlock(&timers_state.vm_clock_seqlock,
@@ -181,7 +171,7 @@ void cpu_disable_ticks(void)
 
 int64_t increase_quantum_time(void) {
     assert(quantum_enabled());
-    
+
     seqlock_write_lock(&timers_state.vm_clock_seqlock,
                        &timers_state.vm_clock_lock);
 
@@ -191,7 +181,7 @@ int64_t increase_quantum_time(void) {
 
     seqlock_write_unlock(&timers_state.vm_clock_seqlock,
                          &timers_state.vm_clock_lock);
-    
+
     // return the current time.
     return timers_state.virtual_clock_snapshot + timers_state.quantum_set_time;
 }

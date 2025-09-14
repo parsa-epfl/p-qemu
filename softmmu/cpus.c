@@ -48,10 +48,10 @@
 #include "trace.h"
 #include "qemu/dynamic_barrier.h"
 #include "sysemu/quantum.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 
 // This function is used to get the current clock of the CPU.
-// It is helpful when we want to know the current target clock. 
+// It is helpful when we want to know the current target clock.
 // We use this function to get the delay of the I/O events in terms of the target clock.
 // After we know the latency, we use it to update the quantum budget.
 int64_t cpu_get_clock_locked(void);
@@ -250,7 +250,7 @@ static void generic_handle_interrupt(CPUState *cpu, int mask)
     cpu->interrupt_request |= mask;
 
     if (!qemu_cpu_is_self(cpu)) {
-        
+
     }
 }
 
@@ -646,7 +646,7 @@ void resume_all_vcpus(void)
     }
 
     // right now there should no CPUs waiting in the quantum barrier.
-    // reset the global quantum counter. 
+    // reset the global quantum counter.
 
     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, true);
     CPU_FOREACH(cpu) {
@@ -877,4 +877,3 @@ void qmp_inject_nmi(Error **errp)
 {
     nmi_monitor_handle(monitor_get_cpu_index(monitor_cur()), errp);
 }
-

@@ -29,7 +29,7 @@
 #include "sysemu/cpus.h"
 #include "qemu/error-report.h"
 #include "accel-softmmu.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 
 int accel_init_machine(AccelState *accel, MachineState *ms)
 {

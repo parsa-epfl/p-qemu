@@ -17,7 +17,7 @@ specific_ss.add(when: 'CONFIG_PLUGIN', if_true: [files(
   'loader.c',
   'core.c',
   'api.c',
-  'cyan_api.c',
+  'pf_api.c',
 ), declare_dependency(link_args: plugin_ldflags)])
 
-# TODO(cyan): Make cyan_api.c only available when the aarch64_softmmu is enabled.
+# TODO(cyan): Make pf_api.c only available when the aarch64_softmmu is enabled.

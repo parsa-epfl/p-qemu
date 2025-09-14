@@ -116,4 +116,4 @@ DEF_HELPER_FLAGS_4(unaligned_access, TCG_CALL_NO_WG,
 
 
 // The following helper is added by Cyan to record the hint of the next PC.
-DEF_HELPER_FLAGS_4(cyan_branch_resolved, TCG_CALL_NO_WG, void, env, i64, i64, i32)
+DEF_HELPER_FLAGS_4(pf_branch_resolved, TCG_CALL_NO_WG, void, env, i64, i64, i32)

@@ -9,7 +9,7 @@
 #include "qemu/osdep.h"
 #include "hw/core/cpu.h"
 #include "qemu/log.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 #include "qemu/qemu-plugin.h"
 #include "trace.h"
 #include "cpu.h"
@@ -4711,9 +4711,9 @@ static void tlbi_aa64_vmalle1is_write(CPUARMState *env, const ARMCPRegInfo *ri,
     CPUState *cs = env_cpu(env);
     int mask = vae1_tlbmask(env);
 
-    if (cyan_flushing_local_tlb_cb != NULL) {
+    if (pf_flushing_local_tlb_cb != NULL) {
       assert(current_cpu == cs);
-      cyan_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
+      pf_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
     }
 
     tlb_flush_by_mmuidx_all_cpus_synced(cs, mask);
@@ -4725,9 +4725,9 @@ static void tlbi_aa64_vmalle1_write(CPUARMState *env, const ARMCPRegInfo *ri,
     CPUState *cs = env_cpu(env);
     int mask = vae1_tlbmask(env);
 
-    if (cyan_flushing_local_tlb_cb != NULL) {
+    if (pf_flushing_local_tlb_cb != NULL) {
       assert(current_cpu == cs);
-      cyan_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
+      pf_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
     }
 
     if (tlb_force_broadcast(env)) {
@@ -4751,9 +4751,9 @@ static void tlbi_aa64_alle1_write(CPUARMState *env, const ARMCPRegInfo *ri,
     CPUState *cs = env_cpu(env);
     int mask = alle1_tlbmask(env);
 
-    if (cyan_flushing_local_tlb_cb != NULL) {
+    if (pf_flushing_local_tlb_cb != NULL) {
       assert(current_cpu == cs);
-      cyan_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
+      pf_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
     }
 
     tlb_flush_by_mmuidx(cs, mask);
@@ -4783,9 +4783,9 @@ static void tlbi_aa64_alle1is_write(CPUARMState *env, const ARMCPRegInfo *ri,
     CPUState *cs = env_cpu(env);
     int mask = alle1_tlbmask(env);
 
-    if (cyan_flushing_local_tlb_cb != NULL) {
+    if (pf_flushing_local_tlb_cb != NULL) {
       assert(current_cpu == cs);
-      cyan_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
+      pf_flushing_local_tlb_cb(current_cpu->cpu_index, QEMU_PLUGIN_TLB_FLUSH_ALL, 0, 0, 0);
     }
 
     tlb_flush_by_mmuidx_all_cpus_synced(cs, mask);
@@ -4846,12 +4846,12 @@ static void tlbi_aa64_vae1is_write(CPUARMState *env, const ARMCPRegInfo *ri,
     uint64_t pageaddr = sextract64(value << 12, 0, 56);
     int bits = vae1_tlbbits(env, pageaddr);
 
-    if (cyan_flushing_local_tlb_cb != NULL) {
+    if (pf_flushing_local_tlb_cb != NULL) {
       assert(current_cpu == cs);
-      cyan_flushing_local_tlb_cb(
-        current_cpu->cpu_index, 
-        QEMU_PLUGIN_TLB_FLUSH_BY_VPN, 
-        0, 
+      pf_flushing_local_tlb_cb(
+        current_cpu->cpu_index,
+        QEMU_PLUGIN_TLB_FLUSH_BY_VPN,
+        0,
         pageaddr >> 12,
         1
       );
@@ -4874,12 +4874,12 @@ static void tlbi_aa64_vae1_write(CPUARMState *env, const ARMCPRegInfo *ri,
     uint64_t pageaddr = sextract64(value << 12, 0, 56);
     int bits = vae1_tlbbits(env, pageaddr);
 
-    if (cyan_flushing_local_tlb_cb != NULL) {
+    if (pf_flushing_local_tlb_cb != NULL) {
       assert(current_cpu == cs);
-      cyan_flushing_local_tlb_cb(
-        current_cpu->cpu_index, 
-        QEMU_PLUGIN_TLB_FLUSH_BY_VPN, 
-        0, 
+      pf_flushing_local_tlb_cb(
+        current_cpu->cpu_index,
+        QEMU_PLUGIN_TLB_FLUSH_BY_VPN,
+        0,
         pageaddr >> 12,
         1
       );
@@ -5030,12 +5030,12 @@ static void do_rvae_write(CPUARMState *env, uint64_t value,
     range = tlbi_aa64_get_range(env, one_idx, value);
     bits = tlbbits_for_regime(env, one_idx, range.base);
 
-    if (cyan_flushing_local_tlb_cb != NULL) {
+    if (pf_flushing_local_tlb_cb != NULL) {
       assert(current_cpu == env_cpu(env));
-      cyan_flushing_local_tlb_cb(
-        current_cpu->cpu_index, 
-        QEMU_PLUGIN_TLB_FLUSH_BY_VPN, 
-        0, 
+      pf_flushing_local_tlb_cb(
+        current_cpu->cpu_index,
+        QEMU_PLUGIN_TLB_FLUSH_BY_VPN,
+        0,
         range.base >> 12,
         range.length >> 12
       );

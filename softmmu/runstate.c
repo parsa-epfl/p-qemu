@@ -60,7 +60,7 @@
 #include "sysemu/sysemu.h"
 #include "sysemu/tpm.h"
 #include "trace.h"
-#include "qemu/plugin-cyan.h"
+#include "qemu/plugin-pf.h"
 
 static NotifierList exit_notifiers =
     NOTIFIER_LIST_INITIALIZER(exit_notifiers);
@@ -723,8 +723,8 @@ static bool main_loop_should_exit(int *status)
         vm_stop(r);
     }
 
-    if (cyan_el_pool_cb) {
-        cyan_el_pool_cb();
+    if (pf_el_pool_cb) {
+        pf_el_pool_cb();
     }
     return false;
 }
