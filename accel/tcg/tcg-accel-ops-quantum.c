@@ -66,32 +66,48 @@ void quantum_initialize_core_info_table(const char *file_name) {
     if (!fp) {
         if (quantum_enabled()) {
             // we don't do anything if the file is not found.
-            printf("IPC file (%s) is not found. It is needed under the quantum mode\n", file_name);
+            printf("IPC file (%s) is not found. It is needed under the quantum mode.\n", file_name);
             exit(1);
         } else {
             return;
         }
-        
+
     }
 
     char line[1024];
     int core_id = 0;
 
+
     // The first line is the header.
     // The header is "ipc,affinity_core_idx"
     // do a comparison with the header.
     assert(fgets(line, 1024, fp) != NULL);
-    assert(strcmp(line, "ipns,affinity_core_idx\n") == 0);    
-
+    bool parse_affinity = false;
+    if (strcmp(line, "ipns,affinity_core_idx\n") == 0) {
+        parse_affinity = true;
+    } else if (strcmp(line, "ipns\n") == 0) {
+        parse_affinity = false;
+    } else {
+        printf("File %s is not valid for setting up the IPNS for quantum.\n", file_name);
+        abort();
+    }
 
     // Now, read every line and fill the structure.
     while(fgets(line, 1024, fp) != NULL) {
-        char *token = strtok(line, ",");
-        double ipns = strtod(token, NULL);
-        core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
-        assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
-        token = strtok(NULL, ",");
-        core_info_table[core_id].affinity_core_idx = atoi(token);
+        if (parse_affinity) {
+            char *token = strtok(line, ",");
+            double ipns = strtod(token, NULL);
+            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
+            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
+            token = strtok(NULL, ",");
+            core_info_table[core_id].affinity_core_idx = atoi(token);
+        } else {
+            double ipns = strtod(line, NULL);
+            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
+            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
+            core_info_table[core_id].affinity_core_idx = core_id;
+        }
+
         core_id += 1;
     }
 
@@ -151,21 +167,21 @@ static void dump_log(CPUState *cpu, per_cpu_host_time_breakdown_t *statistics) {
 
     // push the enter_idle_time, target_cycle_on_idle, and target_cycle_on_instruction to the statistics.
     fprintf(
-        fp, 
-        "%lu,%lu,%lu\n", 
-        cpu->enter_idle_time, 
-        cpu->target_cycle_on_idle, 
+        fp,
+        "%lu,%lu,%lu\n",
+        cpu->enter_idle_time,
+        cpu->target_cycle_on_idle,
         cpu->target_cycle_on_instruction
     );
 
     for(uint64_t i = 0; i < RECORD_SIZE; ++i) {
         fprintf(
-            fp, 
-            "%lu,%lu,%lu,%lu,%lu\n", 
-            statistics[i].total_time, 
-            statistics[i].execution_time, 
-            statistics[i].waiting_time, 
-            statistics[i].idle_time, 
+            fp,
+            "%lu,%lu,%lu,%lu,%lu\n",
+            statistics[i].total_time,
+            statistics[i].execution_time,
+            statistics[i].waiting_time,
+            statistics[i].idle_time,
             statistics[i].peeking_other_time
         );
     }
@@ -205,7 +221,7 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu->thread_id = qemu_get_thread_id();
     cpu->can_do_io = 1;
 
-    // initialize the field that are related to the time. 
+    // initialize the field that are related to the time.
     cpu->unknown_time = 0;
     cpu->enter_idle_time = 0;
     cpu->target_cycle_on_idle = 0;
@@ -225,12 +241,12 @@ static void *mttcg_cpu_thread_fn(void *arg)
 
     cpu->quantum_generation = dynamic_barrier_polling_increase_by_1(&quantum_barrier);
     cpu->quantum_budget = (quantum_size * cpu->ip100ns) / 100;
-    assert(cpu->quantum_budget > 0); 
+    assert(cpu->quantum_budget > 0);
     cpu->quantum_required = 0;
     cpu->quantum_budget_depleted = 0;
 
 
-    qemu_log("Core%u Quantum Count: %lu cycles, %lu instructions \n", cpu->cpu_index, quantum_size, quantum_size * cpu->ip100ns);
+    qemu_log("Core%u Quantum Count: %lu ns, %lu instructions \n", cpu->cpu_index, quantum_size, quantum_size * cpu->ip100ns / 100);
 
     current_cpu = cpu;
     cpu_thread_signal_created(cpu);
@@ -243,7 +259,7 @@ static void *mttcg_cpu_thread_fn(void *arg)
     CPU_SET(core_info_table[cpu->cpu_index].affinity_core_idx, &cpuset);
     int res = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
     assert(res == 0 && "Failed to set thread affinity");
-    
+
     /* process any pending work */
     cpu->exit_request = 1;
 
@@ -268,9 +284,9 @@ continue_to_run:
                     cpu->whether_spinning_on_quantum = true;
 
                     uint32_t new_generation = dynamic_barrier_polling_wait(
-                        &quantum_barrier, 
-                        cpu->quantum_generation, 
-                        &stop_request, 
+                        &quantum_barrier,
+                        cpu->quantum_generation,
+                        &stop_request,
                         cpu->touched_timer_during_last_quantum != 0
                     );
 
@@ -294,18 +310,18 @@ continue_to_run:
                         break;
                     }
                 }
-                
+
                 if (r == EXCP_QUANTUM && !cpu->exit_request) {
                     goto continue_to_run;
                 }
 
                 if (r == EXCP_HLT) {
-                    // this is WFI. 
+                    // this is WFI.
                     // In this case, we should directly wait for the quantum barrier, without getting the iothread.
                 }
             }
             qemu_mutex_lock_iothread();
-            switch (r) {            
+            switch (r) {
             case EXCP_DEBUG:
                 cpu_handle_guest_debug(cpu);
                 break;
@@ -318,9 +334,9 @@ continue_to_run:
             case EXCP_ATOMIC:
                 qemu_mutex_unlock_iothread();
                 // Well, it is possible that this atomic step may deplete the quantum budget.
-                // What we have to do now is to give enough quantum budget to this CPU, and remove it afterwards. 
+                // What we have to do now is to give enough quantum budget to this CPU, and remove it afterwards.
                 int64_t quantum_for_deduction = cpu->quantum_required;
-                // We need to sync immediately to get the quantum budget. 
+                // We need to sync immediately to get the quantum budget.
                 while (cpu->quantum_budget <= quantum_for_deduction) {
                     uint64_t old_generation = cpu->quantum_generation;
                     uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
@@ -330,14 +346,14 @@ continue_to_run:
                     cpu->whether_spinning_on_quantum = true;
 
                     uint32_t new_generation = dynamic_barrier_polling_wait(
-                        &quantum_barrier, 
-                        cpu->quantum_generation, 
-                        &stop_request, 
+                        &quantum_barrier,
+                        cpu->quantum_generation,
+                        &stop_request,
                         cpu->touched_timer_during_last_quantum != 0
                     );
 
                     cpu->whether_spinning_on_quantum = false;
-                    
+
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
@@ -383,9 +399,9 @@ continue_to_run:
                 cpu->whether_spinning_on_quantum = true;
 
                 uint32_t new_generation = dynamic_barrier_polling_wait(
-                    &quantum_barrier, 
-                    cpu->quantum_generation, 
-                    &stop_request, 
+                    &quantum_barrier,
+                    cpu->quantum_generation,
+                    &stop_request,
                     cpu->touched_timer_during_last_quantum != 0
                 );
 
@@ -397,12 +413,12 @@ continue_to_run:
                         assert(quantum_allow_interrupt_wakeup_inside);
                         break;
                     }
-                
+
                     assert(new_generation == old_generation_low_32bit + 1);
 
                     if (cpu->quantum_budget > 0) {
                         // this means the last quantum is not completely depleted. We need to deplete it before moving forward.
-                        cpu->quantum_budget = 0;   
+                        cpu->quantum_budget = 0;
                     }
 
                     cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;

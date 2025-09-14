@@ -108,7 +108,7 @@ void icount_update(CPUState *cpu)
                          &timers_state.vm_clock_lock);
 }
 
-void icount_increase(int64_t incr) 
+void icount_increase(int64_t incr)
 {
     seqlock_write_lock(&timers_state.vm_clock_seqlock,
                        &timers_state.vm_clock_lock);
@@ -434,6 +434,8 @@ void icount_account_warp_timer(void)
     icount_warp_rt();
 }
 
+void rrtcg_initialize_core_info_table(const char *file_name);
+
 void icount_configure(QemuOpts *opts, Error **errp)
 {
     const char *option = qemu_opt_get(opts, "shift");
@@ -442,6 +444,15 @@ void icount_configure(QemuOpts *opts, Error **errp)
     uint64_t period = qemu_opt_get_number(opts, "q", 1000);
     icount_switch_period = period;
     icount_checking_period = qemu_opt_get_number(opts, "check_period", 0);
+
+    // read the option of inps_file.
+    const char *ipns_file = qemu_opt_get(opts, "ipns_file");
+    if (!ipns_file) {
+        rrtcg_initialize_core_info_table("core_info.csv");
+    } else {
+        rrtcg_initialize_core_info_table(ipns_file);
+    }
+
 
     if (icount_checking_period != 0) {
         assert((icount_checking_period >= period) && (icount_checking_period % period == 0));

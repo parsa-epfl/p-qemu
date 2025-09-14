@@ -455,6 +455,10 @@ static QemuOptsList qemu_icount_opts = {
             .name = "check_period",
             .type = QEMU_OPT_NUMBER
         },
+        {
+            .name = "ipns_file",
+            .type = QEMU_OPT_STRING,
+        },
         { /* end of list */ }
     },
 };
@@ -473,10 +477,15 @@ static QemuOptsList qemu_quantum_opts = {
             .name = "check_period",
             .type = QEMU_OPT_NUMBER,
         },
-        { /* end of list */ 
+        {
             .name = "allow_interrupt_wakeup_inside",
             .type = QEMU_OPT_BOOL,
         },
+        {
+            .name = "ipns_file",
+            .type = QEMU_OPT_STRING,
+        },
+        {} /* end of list */
     },
 };
 
@@ -2309,7 +2318,7 @@ static void configure_accelerators(const char *progname)
     qemu_opts_foreach(qemu_find_opts("icount"),
                       do_configure_icount, NULL, &error_fatal);
 
-    qemu_opts_foreach(qemu_find_opts("quantum"), 
+    qemu_opts_foreach(qemu_find_opts("quantum"),
                       do_configure_quantum, NULL, &error_fatal);
 
     if (QTAILQ_EMPTY(&qemu_accel_opts.head)) {

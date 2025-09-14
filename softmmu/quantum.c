@@ -8,6 +8,8 @@ bool quantum_allow_interrupt_wakeup_inside = 0; // allow interrupts and other `r
 static uint64_t quantum_enabled_lower_bound = 0;
 static uint64_t quantum_enabled_upper_bound = 0;
 
+void quantum_initialize_core_info_table(const char *file_name);
+
 void quantum_configure(QemuOpts *opts, Error **errp) {
     uint64_t quantum_size_tmp = qemu_opt_get_number(opts, "size", 0);
     // deplete_threshold = qemu_opt_get_number(opts, "deplete_threshold", 0xffffffffffffffff);
@@ -18,7 +20,7 @@ void quantum_configure(QemuOpts *opts, Error **errp) {
     }
 
     const char *range = qemu_opt_get(opts, "range");
- 
+
     if (!range) {
         quantum_enabled_lower_bound = 0;
         quantum_enabled_upper_bound = 0xFFFFFFFFFFFFFFFF; // all cores are enabled.
@@ -36,6 +38,15 @@ void quantum_configure(QemuOpts *opts, Error **errp) {
 
     // make it as a global value.
     quantum_size = quantum_size_tmp;
-    
+
+    const char *ipns_file = qemu_opt_get(opts, "ipns_file");
+    if (!ipns_file) {
+        // parse the default file, which is core_info.csv
+        quantum_initialize_core_info_table("core_info.csv");
+    } else {
+        // parse the given csv file.
+        quantum_initialize_core_info_table(ipns_file);
+    }
+
     assert(quantum_size < 0x7fffffff);
 }

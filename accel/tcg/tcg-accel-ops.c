@@ -195,7 +195,6 @@ static void tcg_accel_ops_init(AccelOpsClass *ops)
         ops->kick_vcpu_thread = quantum_kick_vcpu_thread;
         ops->handle_interrupt = tcg_handle_interrupt;
         quantum_initialize_barrier();
-        quantum_initialize_core_info_table("core_info.csv");
     }  else if (qemu_tcg_mttcg_enabled()) {
         ops->create_vcpu_thread = mttcg_start_vcpu_thread;
         ops->kick_vcpu_thread = mttcg_kick_vcpu_thread;

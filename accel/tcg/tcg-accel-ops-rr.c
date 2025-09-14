@@ -33,6 +33,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
+#include "qemu/log.h"
 #include "exec/exec-all.h"
 #include "tcg/tcg.h"
 #include "tcg-accel-ops.h"
@@ -179,7 +180,7 @@ typedef struct core_meta_info_t {
 
 static core_meta_info_t core_info_table[256];
 
-static void rrtcg_initialize_core_info_table(const char *file_name) {
+void rrtcg_initialize_core_info_table(const char *file_name) {
     for(uint64_t i = 0; i < 256; ++i) {
         core_info_table[i].ip100ns = 0;
         core_info_table[i].affinity_core_idx = i;
@@ -189,12 +190,12 @@ static void rrtcg_initialize_core_info_table(const char *file_name) {
     FILE *fp = fopen(file_name, "r");
     if (!fp) {
         if (!qemu_tcg_mttcg_enabled()) {
-            printf("IPC file (%s) is not found. It is needed under the round-robin mode\n", file_name);
+            printf("IPC file (%s) is not found. It is needed under the round-robin mode.\n", file_name);
             exit(1);
         } else {
             return;
         }
-        
+
     }
 
     char line[1024];
@@ -204,19 +205,35 @@ static void rrtcg_initialize_core_info_table(const char *file_name) {
     // The header is "ipc,affinity_core_idx"
     // do a comparison with the header.
     assert(fgets(line, 1024, fp) != NULL);
-    assert(strcmp(line, "ipns,affinity_core_idx\n") == 0);    
-
+    bool parse_affinity = false;
+    if (strcmp(line, "ipns,affinity_core_idx\n") == 0) {
+        parse_affinity = true;
+    } else if (strcmp(line, "ipns\n") == 0) {
+        parse_affinity = false;
+    } else {
+        printf("File %s is not valid for setting up the IPNS for quantum.\n", file_name);
+        abort();
+    }
 
     // Now, read every line and fill the structure.
     while(fgets(line, 1024, fp) != NULL) {
-        char *token = strtok(line, ",");
-        double ipns = strtod(token, NULL);
-        core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
-        assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
-        token = strtok(NULL, ",");
-        core_info_table[core_id].affinity_core_idx = atoi(token);
+        if (parse_affinity) {
+            char *token = strtok(line, ",");
+            double ipns = strtod(token, NULL);
+            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
+            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
+            token = strtok(NULL, ",");
+            core_info_table[core_id].affinity_core_idx = atoi(token);
+        } else {
+            double ipns = strtod(line, NULL);
+            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
+            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
+            core_info_table[core_id].affinity_core_idx = core_id;
+        }
+
+        qemu_log("Core%u Quantum Count: %lu ns, %lu instructions \n", core_id, icount_switch_period, icount_switch_period * core_info_table[core_id].ip100ns / 100);
+
         core_id += 1;
-        printf("core_id: %d, ipc: %f, affinity_core_idx: %ld\n", core_id, ipns, core_info_table[core_id].affinity_core_idx);
     }
 
     fclose(fp);
@@ -250,9 +267,6 @@ static void *rr_cpu_thread_fn(void *arg)
     cpu_thread_signal_created(cpu);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
-    // Load the IPC table.
-    rrtcg_initialize_core_info_table("core_info.csv");
-
 
     /* wait for initial kick-off after machine start */
     while (first_cpu->stopped) {
@@ -280,7 +294,7 @@ static void *rr_cpu_thread_fn(void *arg)
     cpu->exit_request = 1;
 
     uint64_t next_check_threshold = icount_checking_period;
-    
+
     uint64_t cycle = 0;
 
     while (1) {
