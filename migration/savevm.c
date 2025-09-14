@@ -2979,7 +2979,7 @@ static struct {
 };
 
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
-                  bool has_devices, strList *devices, SnapshotFormat format, const char *xdelta_source_name, Error **errp)
+                  bool has_devices, strList *devices, SnapshotFormat format, Error **errp)
 {
     BlockDriverState *bs;
     QEMUSnapshotInfo sn1, *sn = &sn1;
@@ -3067,20 +3067,6 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             break;
         }
 
-        case SNAPSHOT_FORMAT_EXTERNAL_RAW: {
-            char snapshot_file_name[293];
-            snprintf(snapshot_file_name, sizeof(snapshot_file_name), "%s", sn->name);
-            QIOChannelFile *ioc = qio_channel_file_new_path(snapshot_file_name, O_WRONLY | O_CREAT | O_TRUNC, 0666, errp);
-            if (!ioc) {
-                error_setg(errp, "Could not create snapshot file");
-                goto the_end;
-            }
-            
-            qio_channel_set_name(QIO_CHANNEL(ioc), "save_snapshot");
-            f = qemu_file_new_output(QIO_CHANNEL(ioc));
-            break;
-        }
-
         case SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE:
         case SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA:
         case SNAPSHOT_FORMAT_EXTERNAL_ZSTD: {
@@ -3097,57 +3083,6 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                 goto the_end;
             }
 
-            break;
-        }
-
-        case SNAPSHOT_FORMAT_EXTERNAL_XDELTA: {
-            if (!xdelta_source_name) {
-                error_setg(errp, "No xdelta source name provided");
-                goto the_end;
-            }
-            
-            char *xdelta3 = get_xdelta3(errp);
-            if (!xdelta3)
-                goto the_end;
-
-            char snapshot_file_name[295];
-            snprintf(snapshot_file_name, sizeof(snapshot_file_name), "%s.xdelta", sn->name);
-            const char *args[] = {
-                xdelta3, 
-                "-1", 
-                "-W", 
-                "67108864",
-                "-N",
-                "-B",
-                "67108864",
-                "-f", 
-                "-e", 
-                "-q", 
-                "-s", xdelta_source_name, 
-                "/proc/self/fd/0", 
-                snapshot_file_name, 
-                NULL
-            };
-
-            // Before actual run the program, we need to see if the source exists.
-            if (access(xdelta_source_name, F_OK) == -1) {
-                error_setg(errp, "Could not find the source snapshot file for xdelta: %s", xdelta_source_name);
-                goto the_end;
-            }
-
-            assert(access(xdelta_source_name, F_OK) != -1);
-            
-            QIOChannelCommand *ioc = qio_channel_command_new_spawn(args, O_RDWR, errp);
-
-            g_free(xdelta3);
-
-            if (!ioc) {
-                error_setg(errp, "Could not create pipe for xdelta3");
-                goto the_end;
-            }
-
-            qio_channel_set_name(QIO_CHANNEL(ioc), "save_snapshot");
-            f = qemu_file_new_output(QIO_CHANNEL(ioc));
             break;
         }
 
@@ -3210,7 +3145,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
 
             // Write the RAMBlock to the zstd file.
             qemu_put_buffer(f, main_ram->host, main_ram->used_length);
-            
+
             ret2 = qemu_fclose(f);
             if (ret2 < 0) {
                 error_setg(errp, "Could not close zstd file");
@@ -3279,7 +3214,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             }
 
             serialize_incremental_loc_file(
-                page_location_file, 
+                page_location_file,
                 incremental_snapshot_context.base_name,
                 incremental_snapshot_context.index,
                 incremental_snapshot_context.page_location
@@ -3298,7 +3233,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
 
                 // Write the RAMBlock to the zstd file.
                 qemu_put_buffer(f, main_ram->host, main_ram->used_length);
-                
+
                 ret2 = qemu_fclose(f);
                 if (ret2 < 0) {
                     error_setg(errp, "Could not close zstd file");
@@ -3457,7 +3392,7 @@ static void *uffd_on_demand_thread(void *main_ram) {
         uint64_t offset = fault_address - (uint64_t)ram->host;
         assert(offset < ram->used_length);
 
-        // Load the page. First check the index. 
+        // Load the page. First check the index.
         struct page_location_pair_t *info = ram->on_demand_index ? g_hash_table_lookup(
             ram->on_demand_index,
             GINT_TO_POINTER(offset)
@@ -3470,9 +3405,9 @@ static void *uffd_on_demand_thread(void *main_ram) {
             // find the file.
             char incremental_file_name[350];
             snprintf(
-                incremental_file_name, 
-                sizeof(incremental_file_name), 
-                "%s.mem/%lu", 
+                incremental_file_name,
+                sizeof(incremental_file_name),
+                "%s.mem/%lu",
                 ram->on_demand_file_name,
                 info->which_file
             );
@@ -3517,8 +3452,8 @@ static void *uffd_on_demand_thread(void *main_ram) {
 
         // copy the page to the fault address.
         assert(uffd_copy_page(
-            ram->on_demand_uffd_fd, 
-            (void *)fault_address,  
+            ram->on_demand_uffd_fd,
+            (void *)fault_address,
             buffer,
             qemu_target_page_size(),
             false
@@ -3565,22 +3500,16 @@ bool load_snapshot(const char *name, const char *vmstate,
     aio_context_release(aio_context);
 
     char zstd_snapshot_name[293];
-    char xdelta_snapshot_name[295];
-    char raw_snapshot_name[293];
     char incremental_base_name[350];
     char incremental_loc_name[350];
     snprintf(zstd_snapshot_name, sizeof(zstd_snapshot_name), "%s.zstd", sn.name);
-    snprintf(xdelta_snapshot_name, sizeof(xdelta_snapshot_name), "%s.xdelta", sn.name);
-    snprintf(raw_snapshot_name, sizeof(raw_snapshot_name), "%s", sn.name);
     snprintf(incremental_base_name, sizeof(incremental_base_name), "%s.mem/base", sn.name);
     snprintf(incremental_loc_name, sizeof(incremental_loc_name), "%s.loc", sn.name);
 
     if (ret < 0) {
         return false;
-    } else if (sn.vm_state_size == 0 && 
-                !g_file_test(zstd_snapshot_name, G_FILE_TEST_IS_REGULAR) && 
-                !g_file_test(xdelta_snapshot_name, G_FILE_TEST_IS_REGULAR) &&
-                !g_file_test(raw_snapshot_name, G_FILE_TEST_IS_REGULAR) &&
+    } else if (sn.vm_state_size == 0 &&
+                !g_file_test(zstd_snapshot_name, G_FILE_TEST_IS_REGULAR) &&
                 !g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR) &&
                 !g_file_test(incremental_loc_name, G_FILE_TEST_IS_REGULAR)) {
         error_setg(errp, "This is a disk-only snapshot. Revert to it "
@@ -3606,45 +3535,13 @@ bool load_snapshot(const char *name, const char *vmstate,
     bool is_incremental_delta = false;
 
     /* restore the VM state */
-    if (g_file_test(xdelta_snapshot_name, G_FILE_TEST_IS_REGULAR)) {
-        char *xdelta3 = get_xdelta3(errp);
-        if (!xdelta3)
-            return false;
-
-        const char *args[] = {xdelta3, "-d", "-q", "-c", xdelta_snapshot_name, NULL};
-
-        QIOChannelCommand *ioc = qio_channel_command_new_spawn(args, O_RDONLY, errp);
-        g_free(xdelta3);
-        if (!ioc) {
-            error_setg(errp, "Could not create pipe for xdelta3");
-            return false;
-        }
-
-        qio_channel_set_name(QIO_CHANNEL(ioc), "load_snapshot");
-
-        f = qemu_file_new_input(QIO_CHANNEL(ioc));
-        if (!f) {
-            error_setg(errp, "Could not open VM state file");
-            return false;
-        }
-
-    } else if (g_file_test(zstd_snapshot_name, G_FILE_TEST_IS_REGULAR)) {
+    if (g_file_test(zstd_snapshot_name, G_FILE_TEST_IS_REGULAR)) {
         f = qemu_file_open_zstd_input(zstd_snapshot_name, errp);
         if (!f) {
             error_setg(errp, "Could not open VM state file");
             return false;
         }
 
-    } else if (g_file_test(raw_snapshot_name, G_FILE_TEST_IS_REGULAR)) {
-        QIOChannelFile *ioc = qio_channel_file_new_path(raw_snapshot_name, O_RDONLY | O_BINARY, 0, errp);
-        if (!ioc) {
-            error_setg(errp, "Could not open snapshot file");
-            return false;
-        }
-
-        qio_channel_set_name(QIO_CHANNEL(ioc), "load_snapshot");
-
-        f = qemu_file_new_input(QIO_CHANNEL(ioc));
     } else if (g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR) || g_file_test(incremental_loc_name, G_FILE_TEST_IS_REGULAR)) {
         // We are going to load the state from <name>.state.zstd.
         char state_file_name[350];
@@ -3690,7 +3587,7 @@ bool load_snapshot(const char *name, const char *vmstate,
             char loc_file[300];
             snprintf(loc_file, sizeof(loc_file), "%s.loc", name);
             FILE *loc_file_fd = fopen(loc_file, "rb");
-            
+
             if (!loc_file_fd) {
                 error_setg(errp, "Could not open the location file");
                 ret = -2;
@@ -3706,9 +3603,9 @@ bool load_snapshot(const char *name, const char *vmstate,
             uint64_t _current_index = 0;
 
             deserialize_incremental_loc_file(
-                loc_file_fd, 
-                main_ram->on_demand_file_name, 
-                256, 
+                loc_file_fd,
+                main_ram->on_demand_file_name,
+                256,
                 &_current_index,
                 main_ram->on_demand_index
             );
@@ -3742,7 +3639,7 @@ bool load_snapshot(const char *name, const char *vmstate,
 
             fclose(base_mem_file_fd);
         }
-    
+
         main_ram->on_demand_uffd_fd = uffd_create_fd(0, false);
         assert(main_ram->on_demand_uffd_fd >= 0); // uffd_create_fd() should not fail.
 
@@ -3750,9 +3647,9 @@ bool load_snapshot(const char *name, const char *vmstate,
         madvise(main_ram->host, main_ram->used_length, MADV_DONTNEED);
 
         assert(uffd_register_memory(
-            main_ram->on_demand_uffd_fd, 
-            main_ram->host, 
-            main_ram->used_length, 
+            main_ram->on_demand_uffd_fd,
+            main_ram->host,
+            main_ram->used_length,
             UFFDIO_REGISTER_MODE_MISSING,
             &main_ram->on_demand_uffd_ioctls
         ) == 0);
@@ -3762,7 +3659,7 @@ bool load_snapshot(const char *name, const char *vmstate,
             main_ram->on_demand_ref_host = qemu_anon_ram_alloc(main_ram->used_length, &main_ram->mr->align, false, true);
             memory_addr_to_load = main_ram->on_demand_ref_host;
         }
-        
+
         // Start another thread to handle the uffd events.
         assert(pthread_create(
             &main_ram->on_demand_uffd_thread,
@@ -3796,7 +3693,7 @@ bool load_snapshot(const char *name, const char *vmstate,
             char loc_file[300];
             snprintf(loc_file, sizeof(loc_file), "%s.loc", name);
             FILE *loc_file_fd = fopen(loc_file, "rb");
-            
+
             if (!loc_file_fd) {
                 error_setg(errp, "Could not open the location file");
                 ret = -2;
@@ -3810,9 +3707,9 @@ bool load_snapshot(const char *name, const char *vmstate,
             incremental_snapshot_context.page_location = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
 
             deserialize_incremental_loc_file(
-                loc_file_fd, 
-                incremental_snapshot_context.base_name, 
-                sizeof(incremental_snapshot_context.base_name), 
+                loc_file_fd,
+                incremental_snapshot_context.base_name,
+                sizeof(incremental_snapshot_context.base_name),
                 &incremental_snapshot_context.index,
                 incremental_snapshot_context.page_location
             );
@@ -3842,7 +3739,7 @@ bool load_snapshot(const char *name, const char *vmstate,
                 }
                 qemu_fclose(f);
             }
-            
+
             // Now we need to load the delta memory.
             // We need to group the pages by their file number.
             // file_number -> [(page_number, offset)]
@@ -3870,7 +3767,7 @@ bool load_snapshot(const char *name, const char *vmstate,
                     g_array_append_vals(array, page_info, 1);
                 }
             }
-            
+
             // Now, we open each file, and read the page in the file.
             {
                 GHashTableIter iter;
@@ -4104,7 +4001,7 @@ static void snapshot_save_job_bh(void *opaque)
 
     job_progress_set_remaining(&s->common, 1);
     s->ret = save_snapshot(s->tag, false, s->vmstate,
-                           true, s->devices, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, NULL, s->errp);
+                           true, s->devices, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, s->errp);
     job_progress_update(&s->common, 1);
 
     qmp_snapshot_job_free(s);

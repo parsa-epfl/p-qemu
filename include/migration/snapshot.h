@@ -19,9 +19,7 @@
 
 typedef enum SnapshotFormat {
     SNAPSHOT_FORMAT_INTERNAL_RAW = 0,
-    SNAPSHOT_FORMAT_EXTERNAL_RAW = 1,
     SNAPSHOT_FORMAT_EXTERNAL_ZSTD = 2,
-    SNAPSHOT_FORMAT_EXTERNAL_XDELTA = 3, // DEPRECATED
     SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE = 4, // A complete snapshot, with zstd compression. <name>.state.zstd and <name>.basemem.zstd will be created.
     SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA = 5, // an incremental snapshot based on the prior snapshot. <name>.state.zstd, <basename>-$i.list,<basename>-$i.delta, and <name>.loc will be created.
 } SnapshotFormat;
@@ -43,7 +41,6 @@ bool save_snapshot(const char *name, bool overwrite,
                    const char *vmstate,
                    bool has_devices, strList *devices,
                    SnapshotFormat format,
-                   const char *xdelta_source_name,
                    Error **errp);
 
 /**

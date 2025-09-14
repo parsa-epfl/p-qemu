@@ -38,7 +38,7 @@
 // All cyan callback functions
 qemu_plugin_cpu_clock_callback_t cyan_cpu_clock_cb = NULL;
 qemu_plugin_vcpu_branch_resolved_cb_t cyan_br_cb = NULL;
-qemu_plugin_snapshot_cb_t cyan_savevm_cb = NULL; 
+qemu_plugin_snapshot_cb_t cyan_savevm_cb = NULL;
 qemu_plugin_snapshot_cpu_clock_update_cb cyan_snapshot_cpu_clock_udpate_cb = NULL;
 qemu_plugin_snapshot_cb_t cyan_loadvm_cb = NULL;
 qemu_plugin_event_loop_poll_cb_t cyan_el_pool_cb = NULL;
@@ -70,7 +70,7 @@ bool qemu_plugin_register_cpu_clock_cb(qemu_plugin_cpu_clock_callback_t callback
   }
 
   assert(!icount_enabled());
-  
+
   cyan_cpu_clock_cb = callback;
   return true;
 }
@@ -87,7 +87,7 @@ bool qemu_plugin_register_snapshot_cpu_clock_update_cb(qemu_plugin_snapshot_cpu_
   }
 
   assert(!icount_enabled());
-  
+
   cyan_snapshot_cpu_clock_udpate_cb = cb;
   return true;
 }
@@ -230,7 +230,7 @@ uint64_t qemu_plugin_get_quantum_size(void) {
 
 void qemu_plugin_savevm(const char *name, qemu_plugin_snapshot_format_t format) {
   Error *err = NULL;
-  save_snapshot(name, true, NULL, false, NULL, (SnapshotFormat)format, "", &err);
+  save_snapshot(name, true, NULL, false, NULL, (SnapshotFormat)format, &err);
 
   if (err) {
     error_reportf_err(err, "Error: ");
@@ -279,7 +279,7 @@ uint64_t qemu_plugin_get_vcpu_ip10ps(uint32_t cpu_idx) {
 
 bool qemu_plugin_register_flushing_local_tlb_cb(
     qemu_plugin_flushing_local_tlb_t cb) {
-  
+
   if (cyan_flushing_local_tlb_cb) {
     return false;
   }
