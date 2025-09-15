@@ -283,11 +283,25 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                     dynamic_barrier_polling_acquire_lock(barrier);
                     // The machine is not running, so we can break.
                     // Before breaking, we need to cancel the waiting count.
-                    barrier->count -= 1;
-                    assert(barrier->count < barrier->threshold);
+                    if (current_gen == barrier->return_value.two_32.generation) {
+                        barrier->count -= 1;
+                        assert(barrier->count < barrier->threshold);
+                        *stop_request = 2;
+                        dynamic_barrier_polling_release_lock(barrier);
+                        return current_gen; // abandon the current quantum.
+                    }
+
+                    // this means the generation has been changed, so no need to decrease the count.
+                    // There should be no pending waiters, because they should be confined by the qemu big lock.
+                    assert(barrier->count == 0);
+                    if (barrier->return_value.two_32.stop_request) {
+                        *stop_request = 1;
+                    } else {
+                        *stop_request = 0;
+                    }
+
                     dynamic_barrier_polling_release_lock(barrier);
-                    *stop_request = 2;
-                    return current_gen; // abandon the current quantum.
+                    return current_gen + 1; // abandon the current quantum.
                 }
             }
 

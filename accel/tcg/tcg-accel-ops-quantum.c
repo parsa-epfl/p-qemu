@@ -24,6 +24,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "sysemu/runstate.h"
 #include "sysemu/tcg.h"
 #include "qemu/plugin-pf.h"
 #include "qemu/typedefs.h"
@@ -304,6 +305,8 @@ continue_to_run:
                         cpu->quantum_budget = 0;
                         cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
+                        assert(cpu->stop || cpu->stopped || !runstate_is_running());
+                        // printf("[%s:%d] CPU %d quits due to the machine state change. stop_request: %d, stopped: %d \n", __FILE__, __LINE__, cpu->cpu_index, cpu->stop, cpu->stopped);
                     }
 
                     if (stop_request) {
@@ -366,6 +369,7 @@ continue_to_run:
                         cpu->quantum_budget = 0;
                         cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
+                        assert(cpu->stop || cpu->stopped || !runstate_is_running());
                     }
 
                     if (stop_request) {
@@ -386,7 +390,7 @@ continue_to_run:
         qemu_mutex_unlock_iothread();
 
         // it is possible that the quantum budget is depleted due to the idle state.
-        if (cpu->quantum_budget_depleted) {
+        if (cpu->quantum_budget_depleted && !cpu->stopped) {
             cpu->quantum_budget_depleted = false;
             do {
                 uint64_t old_generation = cpu->quantum_generation;
@@ -431,6 +435,8 @@ continue_to_run:
                     cpu->quantum_budget = 0;
                     cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                     cpu->quantum_budget_depleted = 1;
+                    assert(cpu->stop || cpu->stopped || !runstate_is_running());
+                    // printf("[%s:%d] CPU %d quits due to the machine state change. stop_request: %d, stopped: %d \n", __FILE__, __LINE__, cpu->cpu_index, cpu->stop, cpu->stopped);
                 }
 
                 cpu_virtual_time[cpu->cpu_index].vts += quantum_size;
