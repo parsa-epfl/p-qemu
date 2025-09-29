@@ -117,5 +117,4 @@ elif cpu in ['ppc', 'ppc64']
   util_ss.add(files('cpuinfo-ppc.c'))
 endif
 
-util_ss.add(files('dynamic_barrier.c'))
 util_ss.add(files('histogram.c'))

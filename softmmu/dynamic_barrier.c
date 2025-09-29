@@ -1,11 +1,12 @@
-#include "qemu/dynamic_barrier.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "qemu/osdep.h"
+#include "qemu/dynamic_barrier.h"
 #include "hw/core/cpu.h"
+#include "hw/irq.h"
 #include "qemu/timer.h"
 #include "sysemu/cpu-timers.h"
 #include "qemu/main-loop.h"
@@ -15,6 +16,10 @@
 #include "qemu/plugin-pf.h"
 
 
+typedef struct delayed_interrupt_info {
+    qemu_irq irq;
+    int level;
+} delayed_interrupt_info_t;
 
 static uint64_t get_current_timestamp_ns(void) {
     struct timespec ts;
@@ -123,6 +128,8 @@ static void *report_time_peridically(void *arg) {
 // }
 
 
+dynamic_barrier_polling_t quantum_barrier;
+
 int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial_threshold) {
     barrier->lock.next_ticket = 0;
     barrier->lock.now_serving = 0;
@@ -133,10 +140,7 @@ int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial
     barrier->return_value.two_32.stop_request = 0;
     barrier->next_virtual_time_deadline_in_ns = 0;
 
-    if (quantum_enabled()) {
-        // pthread_t tid;
-        // pthread_create(&tid, NULL, report_time_peridically, barrier);
-    }
+    assert(quantum_enabled());
 
     for (int i = 0; i < 128; i++) {
         barrier->histogram[i] = create_histogram(100, 1e5, 101e5);
@@ -146,6 +150,10 @@ int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial
 
     barrier->current_cycle = 0;
     barrier->next_check_threshold = quantum_check_threshold;
+
+    barrier->handling_interrupts = false;
+
+    barrier->delayed_interrupts = g_queue_new();
 
     return 0;
 }
@@ -204,9 +212,11 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         barrier->next_virtual_time_deadline_in_ns -= quantum_size;
 
         if (barrier->timer_update_request || barrier->next_virtual_time_deadline_in_ns <= 0) {
+            barrier->handling_interrupts = true;
             qemu_mutex_lock_iothread();
             qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
             qemu_mutex_unlock_iothread();
+            barrier->handling_interrupts = false;
 
             int64_t deadline = qemu_clock_deadline_ns_virtual_clock_for_quantum(current_virtual_time);
 
@@ -219,6 +229,17 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
 
 
         barrier->timer_update_request = false;
+
+        // Now, process the delayed interrupts.
+        barrier->handling_interrupts = true;
+        qemu_mutex_lock_iothread();
+        while (!g_queue_is_empty(barrier->delayed_interrupts)) {
+            delayed_interrupt_info_t *info = g_queue_pop_head(barrier->delayed_interrupts);
+            qemu_invoke_irq_handler(info->irq, info->level);
+            free(info);
+        }
+        qemu_mutex_unlock_iothread();
+        barrier->handling_interrupts = false;
 
         // Then, run the periodic check.
         if (barrier->next_check_threshold != 0 && barrier->current_cycle >= barrier->next_check_threshold) {
@@ -468,5 +489,23 @@ void dynamic_barrier_polling_reset(dynamic_barrier_polling_t *barrier) {
     dynamic_barrier_polling_acquire_lock(barrier);
     atomic_store(&barrier->return_value.two_32.generation, 0); // this should make everyone to not wait.
     barrier->count = 0;
+    dynamic_barrier_polling_release_lock(barrier);
+}
+
+
+
+void dynamic_barrier_push_delayed_interrupt(dynamic_barrier_polling_t *barrier, qemu_irq irq, int level) {
+    if (barrier->handling_interrupts == true && current_cpu) {
+        // we are already handling interrupts, so we can directly invoke the interrupt handler.
+        qemu_invoke_irq_handler(irq, level);
+        return;
+    }
+
+    // gain lock.
+    dynamic_barrier_polling_acquire_lock(barrier);
+    delayed_interrupt_info_t *info = malloc(sizeof(delayed_interrupt_info_t));
+    info->irq = irq;
+    info->level = level;
+    g_queue_push_tail(barrier->delayed_interrupts, info);
     dynamic_barrier_polling_release_lock(barrier);
 }

@@ -23,8 +23,10 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
+#include "qemu/dynamic_barrier.h"
 #include "hw/irq.h"
 #include "qom/object.h"
+#include "sysemu/quantum.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(IRQState, IRQ)
 
@@ -36,10 +38,26 @@ struct IRQState {
     int n;
 };
 
+void qemu_invoke_irq_handler(qemu_irq irq, int level)
+{
+    if (!irq)
+        return;
+
+    irq->handler(irq->opaque, irq->n, level);
+}
+
 void qemu_set_irq(qemu_irq irq, int level)
 {
     if (!irq)
         return;
+
+#if CONFIG_TCG
+    if (quantum_enabled() && level) {
+        // only positive edges are delayed.
+        dynamic_barrier_push_delayed_interrupt(&quantum_barrier, irq, level);
+        return;
+    }
+#endif
 
     irq->handler(irq->opaque, irq->n, level);
 }

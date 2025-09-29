@@ -5,6 +5,8 @@
 
 #define TYPE_IRQ "irq"
 
+void qemu_invoke_irq_handler(qemu_irq irq, int level);
+
 void qemu_set_irq(qemu_irq irq, int level);
 
 static inline void qemu_irq_raise(qemu_irq irq)

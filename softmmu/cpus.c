@@ -76,8 +76,6 @@ int64_t cpu_get_clock_locked(void);
 
 static QemuMutex qemu_global_mutex;
 
-extern dynamic_barrier_polling_t quantum_barrier;
-
 /*
  * The chosen accelerator is supposed to register this.
  */

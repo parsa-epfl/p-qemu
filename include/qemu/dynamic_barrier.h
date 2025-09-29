@@ -9,24 +9,12 @@
 #include "histogram.h"
 #include <stdbool.h>
 
+typedef struct IRQState *qemu_irq;
 
-typedef struct {
-    pthread_mutex_t mutex;      // Mutex for locking
-    pthread_cond_t cond;        // Condition variable for waiting
-    int threshold;              // The number of threads required to proceed
-    int count;                  // The current count of waiting threads
-    int generation;             // Generation count to handle spurious wakeups
-} dynamic_barrier_t;
-
-// These functions are implemented in dynamic_barrier.c. We will use them in the cpus.c and mttcg-ops.c.
-// int dynamic_barrier_init(dynamic_barrier_t *barrier, int initial_threshold);
-// int dynamic_barrier_destroy(dynamic_barrier_t *barrier);
-// int dynamic_barrier_wait(dynamic_barrier_t *barrier);
-// // int dynamic_barrier_wait_with_periodical_wakeup(dynamic_barrier_t *barrier, int sleep_time);
-// // int dynamic_barrier_wait_using_polling(dynamic_barrier_t *barrier);
-// int dynamic_barrier_increase_by_1(dynamic_barrier_t *barrier);
-// int dynamic_barrier_decrease_by_1(dynamic_barrier_t *barrier);
-
+typedef struct delayed_interrupt_t {
+    qemu_irq irq;
+    int level;
+} delayed_interrupt_t;
 
 // The return result of the barrier.
 typedef struct {
@@ -59,15 +47,20 @@ typedef struct {
 
     uint64_t next_check_threshold;
     uint64_t current_cycle;
+
+    uint64_t handling_interrupts;
+
+    GQueue *delayed_interrupts;
 } dynamic_barrier_polling_t;
+
+extern dynamic_barrier_polling_t quantum_barrier;
 
 int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial_threshold);
 int dynamic_barrier_polling_destroy(dynamic_barrier_polling_t *barrier);
 uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32_t private_generation, int *stop_request, bool check_time); // return the current quantum generation after waiting for the barrier.
-uint32_t dynamic_barrier_polling_increase_by_1(dynamic_barrier_polling_t *barrier); // return the current generation while this thread is added. 
+uint32_t dynamic_barrier_polling_increase_by_1(dynamic_barrier_polling_t *barrier); // return the current generation while this thread is added.
 int dynamic_barrier_polling_decrease_by_1(dynamic_barrier_polling_t *barrier);
 void dynamic_barrier_polling_reset(dynamic_barrier_polling_t *barrier);
-
-
+void dynamic_barrier_push_delayed_interrupt(dynamic_barrier_polling_t *barrier, qemu_irq irq, int level);
 
 #endif

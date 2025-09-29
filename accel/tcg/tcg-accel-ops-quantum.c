@@ -45,9 +45,6 @@
 #include <bits/time.h>
 #include <stdio.h>
 
-// const uint64_t QUANTUM_SIZE = 1000000; // 1M
-dynamic_barrier_polling_t quantum_barrier;
-
 typedef struct core_meta_info_t {
     uint64_t ip100ns;
     uint64_t affinity_core_idx;
