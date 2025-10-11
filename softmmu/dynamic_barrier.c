@@ -495,17 +495,17 @@ void dynamic_barrier_polling_reset(dynamic_barrier_polling_t *barrier) {
 
 
 void dynamic_barrier_push_delayed_interrupt(dynamic_barrier_polling_t *barrier, qemu_irq irq, int level) {
+    assert(qemu_mutex_iothread_locked());
+
     if (barrier->handling_interrupts == true && current_cpu) {
         // we are already handling interrupts, so we can directly invoke the interrupt handler.
         qemu_invoke_irq_handler(irq, level);
         return;
     }
 
-    // gain lock.
-    dynamic_barrier_polling_acquire_lock(barrier);
+    // gain lock for the global I/O thread.
     delayed_interrupt_info_t *info = malloc(sizeof(delayed_interrupt_info_t));
     info->irq = irq;
     info->level = level;
     g_queue_push_tail(barrier->delayed_interrupts, info);
-    dynamic_barrier_polling_release_lock(barrier);
 }
