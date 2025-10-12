@@ -33,6 +33,7 @@
 #include "migration/snapshot.h"
 #include "qapi/error.h"
 #include "hw/core/cpu.h"
+#include "qemu/dynamic_barrier.h"
 
 
 // All cyan callback functions
@@ -42,6 +43,7 @@ qemu_plugin_snapshot_cb_t pf_loadvm_cb = NULL;
 qemu_plugin_event_loop_poll_cb_t pf_el_pool_cb = NULL;
 qemu_plugin_periodic_check_cb_t pf_periodic_check_cb = NULL;
 qemu_plugin_flushing_local_tlb_t pf_flushing_local_tlb_cb = NULL;
+qemu_plugin_on_deliver_interrupt_cb_t pf_on_deliver_interrupt_cb = NULL;
 
 // The virtual time of each CPUs.
 struct cpu_virtual_time_t cpu_virtual_time[256];
@@ -228,6 +230,32 @@ bool qemu_plugin_register_flushing_local_tlb_cb(
   }
 
   pf_flushing_local_tlb_cb = cb;
+  return true;
+}
+
+bool qemu_plugin_register_on_deliver_interrupt_cb(
+    qemu_plugin_on_deliver_interrupt_cb_t cb) {
+
+  if (pf_on_deliver_interrupt_cb) {
+    return false;
+  }
+
+  pf_on_deliver_interrupt_cb = cb;
+  return true;
+}
+
+bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
+    uint64_t *var) {
+  if (!quantum_enabled()) {
+    return false;
+  }
+
+  if (quantum_barrier.plugin_quantum_generation != NULL) {
+    return false;
+  }
+
+  quantum_barrier.plugin_quantum_generation = var;
+
   return true;
 }
 

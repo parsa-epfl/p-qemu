@@ -28,7 +28,11 @@ extern qemu_plugin_event_loop_poll_cb_t pf_el_pool_cb;
 // The periodic check callback for the plugin system.
 extern qemu_plugin_periodic_check_cb_t pf_periodic_check_cb;
 
+// The callback for flushing the local TLB of a vCPU.
 extern qemu_plugin_flushing_local_tlb_t pf_flushing_local_tlb_cb;
+
+// The callback for delivering an interrupt to a vCPU.
+extern qemu_plugin_on_deliver_interrupt_cb_t pf_on_deliver_interrupt_cb;
 
 struct cpu_virtual_time_t {
   uint64_t vts;

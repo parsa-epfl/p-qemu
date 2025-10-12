@@ -929,4 +929,16 @@ typedef void (*qemu_plugin_flushing_local_tlb_t)(
 PF_API bool qemu_plugin_register_flushing_local_tlb_cb(
     qemu_plugin_flushing_local_tlb_t cb);
 
+
+typedef void (*qemu_plugin_on_deliver_interrupt_cb_t)(
+  uint32_t vcpu_idx
+);
+
+PF_API bool qemu_plugin_register_on_deliver_interrupt_cb(
+    qemu_plugin_on_deliver_interrupt_cb_t cb);
+
+
+PF_API bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
+    uint64_t *var);
+
 #endif /* QEMU_QEMU_PLUGIN_H */

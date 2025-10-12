@@ -263,6 +263,10 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         return_value.stop_request = broadcast_stop_request;
         return_value.generation = current_gen + 1;
 
+        if (barrier->plugin_quantum_generation) {
+            *(barrier->plugin_quantum_generation) = return_value.generation;
+        }
+
         // cancel the sgi waking up request, because the thread is going to wake up.
         current_cpu->sgi_sender_time_ns_valid = false;
 

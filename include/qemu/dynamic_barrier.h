@@ -51,6 +51,8 @@ typedef struct {
     uint64_t handling_interrupts;
 
     GQueue *delayed_interrupts;
+
+    volatile uint64_t *plugin_quantum_generation;
 } dynamic_barrier_polling_t;
 
 extern dynamic_barrier_polling_t quantum_barrier;
