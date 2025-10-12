@@ -16,10 +16,12 @@
  */
 
 #include "qemu/osdep.h"
-#include "qapi/error.h"
-#include "qemu/module.h"
 #include "hw/intc/arm_gicv3.h"
 #include "gicv3_internal.h"
+#include "hw/core/cpu.h"
+#include "qapi/error.h"
+#include "qemu/module.h"
+#include "qemu/plugin-pf.h"
 
 static bool irqbetter(GICv3CPUState *cs, int irq, uint8_t prio)
 {
@@ -240,6 +242,12 @@ static void gicv3_update_noirqset(GICv3State *s, int start, int len)
              */
             continue;
         }
+
+        // Interrupt from devices.
+        if (pf_on_deliver_interrupt_cb) {
+          pf_on_deliver_interrupt_cb(cs->cpu->cpu_index);
+        }
+
         prio = s->gicd_ipriority[i];
         if (irqbetter(cs, i, prio)) {
             cs->hppi.irq = i;
@@ -331,6 +339,7 @@ static void gicv3_set_irq(void *opaque, int irq, int level)
      */
     GICv3State *s = opaque;
 
+
     if (irq < (s->num_irq - GIC_INTERNAL)) {
         /* external interrupt (SPI) */
         gicv3_dist_set_irq(s, irq + GIC_INTERNAL, level);
@@ -346,6 +355,8 @@ static void gicv3_set_irq(void *opaque, int irq, int level)
          * model wires up interrupts.
          */
         assert(irq >= GIC_NR_SGIS);
+
+        // Place 1 to instrument when an interrupt is raised.
         gicv3_redist_set_irq(&s->cpu[cpu], irq, level);
     }
 }

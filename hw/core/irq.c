@@ -51,13 +51,13 @@ void qemu_set_irq(qemu_irq irq, int level)
     if (!irq)
         return;
 
-#if CONFIG_TCG
-    if (quantum_enabled() && level) {
-        // only positive edges are delayed.
-        dynamic_barrier_push_delayed_interrupt(&quantum_barrier, irq, level);
-        return;
-    }
-#endif
+// #if CONFIG_TCG
+//     if (quantum_enabled() && level) {
+//         // only positive edges are delayed.
+//         dynamic_barrier_push_delayed_interrupt(&quantum_barrier, irq, level);
+//         return;
+//     }
+// #endif
 
     irq->handler(irq->opaque, irq->n, level);
 }

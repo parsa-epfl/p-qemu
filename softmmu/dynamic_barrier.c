@@ -233,11 +233,11 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         // Now, process the delayed interrupts.
         barrier->handling_interrupts = true;
         qemu_mutex_lock_iothread();
-        while (!g_queue_is_empty(barrier->delayed_interrupts)) {
-            delayed_interrupt_info_t *info = g_queue_pop_head(barrier->delayed_interrupts);
-            qemu_invoke_irq_handler(info->irq, info->level);
-            free(info);
-        }
+        // while (!g_queue_is_empty(barrier->delayed_interrupts)) {
+        //     delayed_interrupt_info_t *info = g_queue_pop_head(barrier->delayed_interrupts);
+        //     qemu_invoke_irq_handler(info->irq, info->level);
+        //     free(info);
+        // }
         qemu_mutex_unlock_iothread();
         barrier->handling_interrupts = false;
 

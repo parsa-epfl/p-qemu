@@ -9,8 +9,10 @@
  * any later version.
  */
 
-#include "qemu/osdep.h"
+ #include "qemu/osdep.h"
+#include "hw/core/cpu.h"
 #include "qemu/log.h"
+#include "qemu/plugin-pf.h"
 #include "trace.h"
 #include "gicv3_internal.h"
 
@@ -1126,6 +1128,11 @@ void gicv3_redist_set_irq(GICv3CPUState *cs, int irq, int level)
         if (extract32(cs->edge_trigger, irq, 1)) {
             cs->gicr_ipendr0 = deposit32(cs->gicr_ipendr0, irq, 1, 1);
         }
+
+        // Interrupt for PPI (private peripheral interrupt).
+        if (pf_on_deliver_interrupt_cb) {
+          pf_on_deliver_interrupt_cb(cs->cpu->cpu_index);
+        }
     }
 
     gicv3_redist_update(cs);
@@ -1156,6 +1163,11 @@ void gicv3_redist_send_sgi(GICv3CPUState *cs, int grp, int irq, bool ns)
             (irqgrp == GICV3_G1 && nsaccess < 2)) {
             return;
         }
+    }
+
+    // Interrupt from SGI.
+    if (pf_on_deliver_interrupt_cb) {
+      pf_on_deliver_interrupt_cb(cs->cpu->cpu_index);
     }
 
     /* OK, we can accept the SGI */

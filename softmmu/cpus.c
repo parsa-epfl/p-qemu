@@ -254,10 +254,6 @@ static void generic_handle_interrupt(CPUState *cpu, int mask)
 
 void cpu_interrupt(CPUState *cpu, int mask)
 {
-    if (pf_on_deliver_interrupt_cb) {
-        pf_on_deliver_interrupt_cb(cpu->cpu_index);
-    }
-
     if (cpus_accel->handle_interrupt) {
         cpus_accel->handle_interrupt(cpu, mask);
     } else {

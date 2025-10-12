@@ -16,6 +16,7 @@
 #include "qemu/bitops.h"
 #include "qemu/log.h"
 #include "qemu/main-loop.h"
+#include "qemu/plugin-pf.h"
 #include "trace.h"
 #include "gicv3_internal.h"
 #include "hw/irq.h"
@@ -1885,8 +1886,6 @@ static void icc_generate_sgi(CPUARMState *env, GICv3CPUState *cs,
             //     // );
             // }
         }
-
-        
 
         /* The redistributor will check against its own GICR_NSACR as needed */
         gicv3_redist_send_sgi(ocs, grp, irq, ns);
