@@ -3714,29 +3714,33 @@ bool load_snapshot(const char *name, const char *vmstate,
             );
             fclose(loc_file_fd);
 
+            incremental_snapshot_context.index += 1; // make this pointing to the next file to be written.
+
             // First, we need to load the base memory.
             {
-                char base_mem_file[300];
-                snprintf(base_mem_file, sizeof(base_mem_file), "%s.mem/base", incremental_snapshot_context.base_name);
-                QEMUFile *f = qemu_file_open_input(base_mem_file, errp);
-                if (!f) {
-                    error_setg(errp, "Could not open the base memory file");
-                    ret = -2;
-                    goto err_drain;
+              char base_mem_file[300];
+              snprintf(base_mem_file, sizeof(base_mem_file), "%s.mem/base",
+                       incremental_snapshot_context.base_name);
+              QEMUFile *f = qemu_file_open_input(base_mem_file, errp);
+              if (!f) {
+                error_setg(errp, "Could not open the base memory file");
+                ret = -2;
+                goto err_drain;
+              }
+
+              // Read the memory completely from the buffer.
+              ssize_t len = qemu_get_buffer(f, memory_addr_to_load,
+                                            main_ram->used_length);
+              if (len != main_ram->used_length) {
+                error_setg(errp, "Could not read the memory completely");
+                ret = -2;
+                if (len < 0) {
+                  ret = len;
                 }
 
-                // Read the memory completely from the buffer.
-                ssize_t len = qemu_get_buffer(f, memory_addr_to_load, main_ram->used_length);
-                if (len != main_ram->used_length) {
-                    error_setg(errp, "Could not read the memory completely");
-                    ret = -2;
-                    if (len < 0) {
-                        ret = len;
-                    }
-
-                    goto err_drain;
-                }
-                qemu_fclose(f);
+                goto err_drain;
+              }
+              qemu_fclose(f);
             }
 
             // Now we need to load the delta memory.
