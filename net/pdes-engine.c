@@ -16,6 +16,9 @@ struct PDESEngine {
     bool has_first_sync;
     bool pair_has_finished;
     
+    uint64_t base_diff;
+    uint64_t first_sync_time;
+
     // WWT specific
     bool waiting_for_quanta;
 };
@@ -25,6 +28,14 @@ struct message_receive_context {
     Message msg;
     QEMUTimer *one_time_poll_timer;
 };
+
+u_int16_t get_message_time_translated(PDESEngine *engine, Message *msg) {
+    // Translate message timestamp to local virtual time
+    // Assume we are synced
+    assert(engine->has_first_sync);
+    u_int64_t translated_time = msg->ts_ns - engine->base_diff;
+    return translated_time;
+}
 uint64_t get_current_virtual_for_normal_message(PDESEngine *engine) {
     return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + engine->latencyns;
 }
@@ -49,6 +60,7 @@ PDESEngine *pdes_engine_create(
     engine->has_first_sync = false;
     engine->waiting_for_quanta = false;
     engine->pair_has_finished = false;
+    engine->base_diff = 0;
 
 
 
@@ -57,6 +69,7 @@ PDESEngine *pdes_engine_create(
     timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+5000000); // 5 ms
 
     uint64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    engine->first_sync_time = current_time;
     Message sync_msg = create_message(NULL, 0, MSG_TYPE_SYNC, get_current_virtual_for_sync_message(engine));
     pdes_comm_send(engine->comm, &sync_msg);
     
@@ -118,6 +131,7 @@ void process_message(PDESEngine *engine, Message *msg) {
 
     if (msg->type == MSG_TYPE_SYNC) {
         if (!engine->has_first_sync){
+            engine->base_diff = msg->ts_ns - engine->first_sync_time;
             printf("$$$$$$$$$$$ at time %lu ns we recieved first sync with timestamp %lu ns $$$$$$$$$\n", current_virtual_time, msg->ts_ns);
         }
         engine->has_first_sync = true;  /* Set synced flag when sync received */
@@ -130,22 +144,24 @@ void process_message(PDESEngine *engine, Message *msg) {
         // Make sure time has not passed, if it has, just pass it at current time + 1
         // use timer_new_ms virtual time
 
-        // if (msg->ts_ns < current_virtual_time - 1) {
-        //     // TODO turn this to optional error later
-        //     // printf("!!!!!!!!!!!!!!!!!!!!!!!! Detected causality violation: message time %lu < current virtual time %lu !!!!!!!!!!!!!!!!!!!!!!!!\n", msg->ts_ns, current_virtual_time);
-        //     msg->ts_ns = current_virtual_time + 1; // Schedule it a bit later : TODO temp solution
-        // }
+        u_int64_t translated_time = get_message_time_translated(engine, msg);
+        if (translated_time < current_virtual_time - 1) {
+            // TODO turn this to optional error later
+            // printf("!!!!!!!!!!!!!!!!!!!!!!!! Detected causality violation: message time %lu < current virtual time %lu !!!!!!!!!!!!!!!!!!!!!!!!\n", msg->ts_ns, current_virtual_time);
+            translated_time = current_virtual_time + 1; // Schedule it a bit later : TODO temp solution
+        }
         // printf("****scheduling message of length %u to be processed at time %lu ns (current virtual time %lu ns)****\n", msg->len, msg->ts_ns, current_virtual_time);
-        engine->recv_cb(engine->recv_opaque, msg->data, msg->len);
+        printf("****sending message of length %u to recv callback at time %lu ns and translated time %lu ns****\n", msg->len, current_virtual_time, get_message_time_translated(engine, msg));
+        // engine->recv_cb(engine->recv_opaque, msg->data, msg->len);
         // u_int64_t time_diff_seconds = (msg->ts_ns - current_virtual_time) / 1000000000;
         // printf("time difference is %lu ns\n", time_diff_seconds);
         // // msg->ts_ns = current_virtual_time + 1;  // Schedule at original time
         // // Schedule the message processing at the correct virtual time
-        // struct message_receive_context *ctx = g_new0(struct message_receive_context, 1);
-        // ctx->engine = engine;
-        // memcpy(&ctx->msg, msg, sizeof(Message));
-        // ctx->one_time_poll_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, process_message_at_virtual_time, ctx);
-        // timer_mod(ctx->one_time_poll_timer, msg->ts_ns);
+        struct message_receive_context *ctx = g_new0(struct message_receive_context, 1);
+        ctx->engine = engine;
+        memcpy(&ctx->msg, msg, sizeof(Message));
+        ctx->one_time_poll_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, process_message_at_virtual_time, ctx);
+        timer_mod(ctx->one_time_poll_timer, translated_time);
     }
 }
 
