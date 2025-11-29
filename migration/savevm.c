@@ -3350,7 +3350,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                    use_32bit_index ? "32-bit" : "64-bit");
 
             // Also dump the complete memory for backward compatibility and testing
-            const bool ALSO_DUMP_COMPLETE_BASE = true;
+            const bool ALSO_DUMP_COMPLETE_BASE = false;
             if (ALSO_DUMP_COMPLETE_BASE) {
                 snprintf(dump_file_name, sizeof(dump_file_name), "%s.mem/base", sn->name);
 
@@ -3774,9 +3774,11 @@ bool load_snapshot(const char *name, const char *vmstate,
 
     char zstd_snapshot_name[293];
     char incremental_base_name[350];
+    char incremental_base_data_name[350];
     char incremental_loc_name[350];
     snprintf(zstd_snapshot_name, sizeof(zstd_snapshot_name), "%s.zstd", sn.name);
     snprintf(incremental_base_name, sizeof(incremental_base_name), "%s.mem/base", sn.name);
+    snprintf(incremental_base_data_name, sizeof(incremental_base_data_name), "%s.mem/base.data", sn.name);
     snprintf(incremental_loc_name, sizeof(incremental_loc_name), "%s.loc", sn.name);
 
     if (ret < 0) {
@@ -3815,7 +3817,9 @@ bool load_snapshot(const char *name, const char *vmstate,
             return false;
         }
 
-    } else if (g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR) || g_file_test(incremental_loc_name, G_FILE_TEST_IS_REGULAR)) {
+    } else if (g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR) || 
+               g_file_test(incremental_base_data_name, G_FILE_TEST_IS_REGULAR) || 
+               g_file_test(incremental_loc_name, G_FILE_TEST_IS_REGULAR)) {
         // We are going to load the state from <name>.state.zstd.
         char state_file_name[350];
         snprintf(state_file_name, sizeof(state_file_name), "%s.state.zstd", sn.name);
@@ -3825,7 +3829,8 @@ bool load_snapshot(const char *name, const char *vmstate,
             return false;
         }
 
-        if (g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR)) {
+        if (g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR) ||
+            g_file_test(incremental_base_data_name, G_FILE_TEST_IS_REGULAR)) {
             is_incremental_base = true;
         } else {
             is_incremental_delta = true;
