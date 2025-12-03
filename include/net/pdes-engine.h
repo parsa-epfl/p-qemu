@@ -19,7 +19,7 @@ typedef void (*PauseStatusCallBack)(void *opaque);
 struct PDESEngine {
     PDESCommunicator *comm;
     bool needs_sync;
-    uint64_t latencyns;
+    int64_t latencyns;
     PDESRecvCallback recv_cb;
     void *recv_opaque;
     QEMUTimer *msg_rec_poll_timer;
@@ -35,10 +35,17 @@ struct PDESEngine {
     bool paused;
 
 
-    uint64_t base_diff;
-    uint64_t first_sync_time;
+    int64_t base_diff;
+    int64_t first_sync_time;
 
     
+
+    // This is only used since client and server might come from checkpoints that are not synced and there will be a delta: TODO see if this can be improved
+    bool caclulated_time_diff;
+    // Check if time diff has been calculated correctly and type conversion is ok
+    int64_t first_sync_virtual_time;
+    int64_t neighbor_first_sync_virtual_time;
+    int64_t base_time_diff;
 
     // WWT specific
     bool waiting_for_quanta;
@@ -48,14 +55,15 @@ PDESEngine *pdes_engine_create(
     const char *shm_send, 
     const char *shm_recv, 
     bool sync, 
-    uint64_t latencyns,
+    int64_t latencyns,
     PDESRecvCallback cb, 
     void *opaque,
     PauseStatusCallBack pause_status_cb,
-    void *pause_status_opaque
+    void *pause_status_opaque,
+    int64_t first_sync_virtual_time
 );
 void pdes_engine_destroy(PDESEngine *engine);
-int pdes_engine_send(PDESEngine *engine, const uint8_t *data, size_t len);
+int pdes_engine_send(PDESEngine *engine, Message *msg);
 void pdes_engine_poll(void *opaque);
 
 // TODO this needs to move to a proper library and its own thread
@@ -73,9 +81,10 @@ void pdes_play(void *opaque);
 // WWT specific: TODO move to its own headr file later
 struct PDESWWT{
     PDESEngine *engine;
-    uint64_t quantum_ns;
-    uint64_t number_of_neighbors;
-    uint64_t number_of_neighbors_finished;
+    int64_t latencyns;
+    int64_t quantum_ns;
+    int64_t number_of_neighbors;
+    int64_t number_of_neighbors_finished;
     bool has_finished;
     PDESFinalRecvCallback recv_cb;
     void *recv_opaque;
@@ -83,13 +92,17 @@ struct PDESWWT{
 
     QEMUTimer *setup_timer;
     QEMUTimer *quantum_timer;
+
+    int64_t first_sync_virtual_time;
+
+    
 };
 
 PDESWWT *pdes_engine_wwt_create(
     const char *shm_send,
     const char *shm_recv,
     bool sync,
-    uint64_t latencyns,
+    int64_t latencyns,
     PDESFinalRecvCallback cb, 
     void *opaque
 );
@@ -100,6 +113,7 @@ int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len);
 // TODO put its type to PDESRecvCallback
 void wwt_recivied_callback(void *opaque, Message *msg);
 bool is_waiting_for_quanta(PDESWWT *wwt_engine);
+void quanta_sync(PDESWWT *wwt_engine);
 
 
 
@@ -115,5 +129,7 @@ struct MessageReceiveContext {
 };
 
 void process_message_at_virtual_time(MessageReceiveContext *opaque);
+
+int64_t get_transformed_timestamp(PDESEngine *engine, Message *msg);
 
 #endif

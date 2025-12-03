@@ -23,3 +23,21 @@ void process_message_at_virtual_time(MessageReceiveContext *opaque) {
     g_free(ctx->one_time_poll_timer);
     g_free(ctx);
 }
+
+
+int64_t get_transformed_timestamp(PDESEngine *engine, Message *msg) {
+    // Find the difference between first sync times
+    if(engine->first_sync_virtual_time == -1 || engine->neighbor_first_sync_virtual_time == -1){
+        // This should not happen, as the first message sent out should be syncs
+        assert(false && "First sync virtual times not set before transforming timestamp");
+    }
+    
+    if (engine->caclulated_time_diff == false){
+        // First time calculating base time diff
+        engine->base_time_diff = engine->first_sync_virtual_time - engine->neighbor_first_sync_virtual_time;
+        printf("PDES Engine calculated base time difference of %lu ns (first sync virtual time: %lu ns, neighbor first sync virtual time: %lu ns)\n", engine->base_time_diff, engine->first_sync_virtual_time, engine->neighbor_first_sync_virtual_time);
+        engine->caclulated_time_diff = true;
+    }
+    // Transform the message timestamp
+    return msg->ts_ns + engine->base_time_diff;
+}
