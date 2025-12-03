@@ -3,9 +3,34 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "pdes-communicator.h"
+#include "qemu/timer.h"
 
 typedef struct PDESEngine PDESEngine;
-typedef void (*PDESRecvCallback)(void *opaque, const uint8_t *data, size_t len);
+typedef struct PDESWWT PDESWWT;
+
+
+typedef void (*PDESFinalRecvCallback)(void *opaque, const uint8_t *data, size_t len);
+typedef void (*PDESRecvCallback)(void *opaque, Message *msg);
+
+struct PDESEngine {
+    PDESCommunicator *comm;
+    bool needs_sync;
+    uint64_t latencyns;
+    PDESRecvCallback recv_cb;
+    void *recv_opaque;
+    QEMUTimer *msg_rec_poll_timer;
+    QEMUTimer *sync_poll_timer;
+    QEMUTimer *setup_poll_timer;
+    bool has_first_sync;
+    bool pair_has_finished;
+    
+    uint64_t base_diff;
+    uint64_t first_sync_time;
+
+    // WWT specific
+    bool waiting_for_quanta;
+};
 
 PDESEngine *pdes_engine_create(
     const char *shm_send, 
@@ -21,5 +46,47 @@ void pdes_engine_poll(void *opaque);
 
 // TODO this needs to move to a proper library and its own thread
 void schedule_poll(void *opaque);
+
+void setup(void *opaque);
+
+
+
+
+
+
+
+// WWT specific: TODO move to its own headr file later
+struct PDESWWT{
+    PDESEngine *engine;
+    uint64_t quantum_ns;
+    uint64_t number_of_neighbors;
+    uint64_t number_of_neighbors_finished;
+    bool has_finished;
+    PDESFinalRecvCallback recv_cb;
+    void *recv_opaque;
+    bool should_sync;
+
+    QEMUTimer *setup_timer;
+    QEMUTimer *quantum_timer;
+};
+
+PDESWWT *pdes_engine_wwt_create(
+    const char *shm_send,
+    const char *shm_recv,
+    bool sync,
+    uint64_t latencyns,
+    PDESFinalRecvCallback cb, 
+    void *opaque
+);
+void setup_wwt(PDESWWT *wwt_engine);
+void send_sync(PDESWWT *wwt_engine);
+void finish_quantum(PDESWWT *wwt_engine);
+int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len);
+// TODO put its type to PDESRecvCallback
+void wwt_recivied_callback(void *opaque, Message *msg);
+
+
+
+
 
 #endif

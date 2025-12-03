@@ -4,45 +4,20 @@
 #include "qemu/main-loop.h"
 #include "sysemu/runstate.h"
 
-struct PDESEngine {
-    PDESCommunicator *comm;
-    bool needs_sync;
-    uint64_t latencyns;
-    PDESRecvCallback recv_cb;
-    void *recv_opaque;
-    QEMUTimer *msg_rec_poll_timer;
-    QEMUTimer *sync_poll_timer;
-    QEMUTimer *setup_poll_timer;
-    bool has_first_sync;
-    bool pair_has_finished;
-    
-    uint64_t base_diff;
-    uint64_t first_sync_time;
-
-    // WWT specific
-    bool waiting_for_quanta;
-};
-
 struct message_receive_context {
     PDESEngine *engine;
     Message msg;
     QEMUTimer *one_time_poll_timer;
 };
 
-u_int16_t get_message_time_translated(PDESEngine *engine, Message *msg) {
-    // Translate message timestamp to local virtual time
-    // Assume we are synced
-    assert(engine->has_first_sync);
-    u_int64_t translated_time = msg->ts_ns - engine->base_diff;
-    return translated_time;
-}
 uint64_t get_current_virtual_for_normal_message(PDESEngine *engine) {
     return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + engine->latencyns;
 }
 
-uint64_t get_current_virtual_for_sync_message(PDESEngine *engine) {
-    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + engine->latencyns;
+uint64_t get_current_virtual_for_destroy_message(PDESEngine *engine) {
+    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 }
+
 PDESEngine *pdes_engine_create(
     const char *shm_send, 
     const char *shm_recv, 
@@ -66,22 +41,21 @@ PDESEngine *pdes_engine_create(
 
     engine->msg_rec_poll_timer = timer_new_ns(QEMU_CLOCK_HOST, pdes_engine_poll, engine);
     // Schedule it IMMEDIATELY
+
+    // TODO look into optimizing this
     timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+5000000); // 5 ms
 
     uint64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     engine->first_sync_time = current_time;
-    Message sync_msg = create_message(NULL, 0, MSG_TYPE_SYNC, get_current_virtual_for_sync_message(engine));
-    pdes_comm_send(engine->comm, &sync_msg);
     
-    printf(">>>>>>> NET_INIT_PDES CALLED 2222 <<<<<<<\n");
-    qemu_notify_event();
+    printf(">>>>>>> NET_INIT_PDES CALLED <<<<<<<\n");
     return engine;
 }
 
 
 void pdes_engine_destroy(PDESEngine *engine) {
     printf("==========================================Destroying PDES Engine...==========================================\n");
-    Message mssg = create_message(NULL, 0, END_OF_EMULATION, get_current_virtual_for_sync_message(engine));
+    Message mssg = create_message(NULL, 0, END_OF_EMULATION, get_current_virtual_for_destroy_message(engine));
     pdes_comm_send(engine->comm, &mssg);
     if (engine->comm) {
         pdes_comm_destroy(engine->comm);
@@ -95,78 +69,17 @@ int pdes_engine_send(PDESEngine *engine, const uint8_t *data, size_t len) {
     Message mssg = create_message(data, len, MSG_TYPE_NORMAL, get_current_virtual_for_normal_message(engine));
     // Get current virtual time and add latency
     mssg.ts_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (engine->latencyns);
-    printf("===========================================PDES Engine: Sending message of length %zu with timestamp %lu ns==========================================\n", len, mssg.ts_ns);
+    // printf("===========================================PDES Engine: Sending message of length %zu with timestamp %lu ns==========================================\n", len, mssg.ts_ns);
     return pdes_comm_send(engine->comm, &mssg);
 }
 
 
-void process_message_at_virtual_time(void *opaque) {
-    struct message_receive_context *ctx = opaque;
-    PDESEngine *engine = ctx->engine;
-    Message *msg = &ctx->msg;
-
-    printf("****got to process message of length %u at scheduled time %lu ns****\n", msg->len, msg->ts_ns);
-
-    if (msg->len > 0 && msg->type != MSG_TYPE_SYNC && engine->recv_cb) {
-        // Assert the time has arrived
-        int64_t current_virtual_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-        if (msg->ts_ns != current_virtual_time) {
-            // This should not happen
-            // TODO add this back in
-            // fprintf(stderr, "==========================Error: message scheduled time has not arrived yet (mssg time %lu != %lu current time)==========================\n", msg->ts_ns, current_virtual_time);
-        }
-        printf("****sending message of length %u to recv callback at time %lu ns****\n", msg->len, current_virtual_time);
-        engine->recv_cb(engine->recv_opaque, msg->data, msg->len);
-    }
-
-    g_free(ctx->one_time_poll_timer);
-    g_free(ctx);
-}
 
 void process_message(PDESEngine *engine, Message *msg) {
-
-    printf("==========================================PDES Engine: Received message of length %u with type %u and timestamp %lu ns==========================================\n", msg->len, msg->type, msg->ts_ns);
-    int64_t current_virtual_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    
-
-    if (msg->type == MSG_TYPE_SYNC) {
-        if (!engine->has_first_sync){
-            engine->base_diff = msg->ts_ns - engine->first_sync_time;
-            printf("$$$$$$$$$$$ at time %lu ns we recieved first sync with timestamp %lu ns $$$$$$$$$\n", current_virtual_time, msg->ts_ns);
-        }
-        engine->has_first_sync = true;  /* Set synced flag when sync received */
-        engine->waiting_for_quanta = false;  /* WWT specific: release waiting quanta */
-    }else if (msg->type == END_OF_EMULATION) {
-        engine->pair_has_finished = true;
-        printf("==========================================PDES Engine: Received end of emulation message from peer.==========================================\n");
-    }else if (msg->len > 0 && msg->type != MSG_TYPE_SYNC && engine->recv_cb) {
-        // Check message timestamp
-        // Make sure time has not passed, if it has, just pass it at current time + 1
-        // use timer_new_ms virtual time
-
-        u_int64_t translated_time = get_message_time_translated(engine, msg);
-        if (translated_time < current_virtual_time - 1) {
-            // TODO turn this to optional error later
-            // printf("!!!!!!!!!!!!!!!!!!!!!!!! Detected causality violation: message time %lu < current virtual time %lu !!!!!!!!!!!!!!!!!!!!!!!!\n", msg->ts_ns, current_virtual_time);
-            translated_time = current_virtual_time + 1; // Schedule it a bit later : TODO temp solution
-        }
-        // printf("****scheduling message of length %u to be processed at time %lu ns (current virtual time %lu ns)****\n", msg->len, msg->ts_ns, current_virtual_time);
-        printf("****sending message of length %u to recv callback at time %lu ns and translated time %lu ns****\n", msg->len, current_virtual_time, get_message_time_translated(engine, msg));
-        // engine->recv_cb(engine->recv_opaque, msg->data, msg->len);
-        // u_int64_t time_diff_seconds = (msg->ts_ns - current_virtual_time) / 1000000000;
-        // printf("time difference is %lu ns\n", time_diff_seconds);
-        // // msg->ts_ns = current_virtual_time + 1;  // Schedule at original time
-        // // Schedule the message processing at the correct virtual time
-        struct message_receive_context *ctx = g_new0(struct message_receive_context, 1);
-        ctx->engine = engine;
-        memcpy(&ctx->msg, msg, sizeof(Message));
-        ctx->one_time_poll_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, process_message_at_virtual_time, ctx);
-        timer_mod(ctx->one_time_poll_timer, translated_time);
-    }
+    engine->recv_cb(engine->recv_opaque, msg);
 }
 
 void pdes_engine_poll(void *opaque) {
-    // printf("+++++++++++++++ PDES Engine polling for messages +++++++++++++++\n");
     u_int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     PDESEngine *engine = opaque;
     Message msg;
