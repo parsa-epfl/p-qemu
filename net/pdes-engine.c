@@ -24,7 +24,9 @@ PDESEngine *pdes_engine_create(
     bool sync, 
     uint64_t latencyns,
     PDESRecvCallback cb, 
-    void *opaque
+    void *opaque,
+    PauseStatusCallBack pause_status_cb,
+    void *pause_status_opaque
 ) {
     PDESEngine *engine = g_new0(PDESEngine, 1);
     engine->comm = pdes_comm_create(shm_send, shm_recv);
@@ -36,6 +38,9 @@ PDESEngine *pdes_engine_create(
     engine->waiting_for_quanta = false;
     engine->pair_has_finished = false;
     engine->base_diff = 0;
+    engine->paused = false;
+    engine->pause_status_cb = pause_status_cb;
+    engine->pause_status_opaque = pause_status_opaque;
 
 
 
@@ -104,4 +109,24 @@ void schedule_poll(void *opaque){
     PDESEngine *engine = opaque;
     uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
     timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+5000000); // 5 ms
+}
+
+void pdes_pause(void *opaque){
+    PDESEngine *engine = opaque;
+    engine->paused = true;
+    printf("PDES Engine paused.\n");
+    while (engine->paused){
+        // Wait until not in the middle of processing
+        usleep(1000); // Sleep for 1 ms
+
+        // TODO again this is specific to QEMU and how sleeping is affected in ICOUNT mode, make it more generalized later
+        engine->pause_status_cb(engine->pause_status_opaque);
+    }
+    printf("PDES Engine resumed from pause.\n");
+}
+
+void pdes_play(void *opaque){
+    PDESEngine *engine = opaque;
+    engine->paused = false;
+    printf("PDES Engine resumed from pause function called.\n");
 }

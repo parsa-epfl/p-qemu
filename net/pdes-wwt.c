@@ -23,7 +23,16 @@ PDESWWT *pdes_engine_wwt_create(
 
 
     // Creating underlying PDESEngine
-    wwt->engine = pdes_engine_create(shm_send, shm_recv, sync, latencyns, wwt_recivied_callback, wwt);
+    wwt->engine = pdes_engine_create(
+        shm_send, 
+        shm_recv, 
+        sync, 
+        latencyns, 
+        wwt_recivied_callback, 
+        wwt,
+        is_waiting_for_quanta,
+        wwt
+    );
     
 
     // Setup final callback and opaque for when receiving messages
@@ -51,20 +60,14 @@ PDESWWT *pdes_engine_wwt_create(
 }
 
 
+
 void setup_wwt(PDESWWT *wwt_engine){
     // Send initial sync message
     send_sync(wwt_engine);
     printf("WWT: Setup called, sent initial sync message.\n");
 
 
-    while(wwt_engine->number_of_neighbors_finished < wwt_engine->number_of_neighbors){
-        // Wait for all neighbors to finish setup
-        usleep(1);
-
-        // TODO this needs to be addressed
-        // as this thread can block polling, call message reading after each sleep
-        pdes_engine_poll(wwt_engine->engine);
-    }
+    pdes_pause(wwt_engine->engine);
 
     printf("WWT: All neighbors finished setup.\n");
     // Reset for next quantum
@@ -97,3 +100,14 @@ void wwt_recivied_callback(void *opaque, Message *msg){
     }
 }
 
+
+bool is_waiting_for_quanta(PDESWWT *wwt_engine) {
+    // TODO this needs to be addressed
+    // as this thread can block polling, call message reading after each sleep
+    pdes_engine_poll(wwt_engine->engine);
+    bool waiting = wwt_engine->number_of_neighbors_finished < wwt_engine->number_of_neighbors;
+    if (waiting == false){
+        pdes_play(wwt_engine->engine);
+    }
+    return waiting;
+}
