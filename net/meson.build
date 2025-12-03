@@ -69,4 +69,5 @@ system_ss.add(files(
   'pdes-engine.c',
   'pdes-netdev.c',
   'pdes-wwt.c',
+  'pdes-utility.c',
 ))

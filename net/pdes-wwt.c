@@ -96,6 +96,19 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         printf("WWT: Received sync message. Total finished neighbors: %lu/%lu\n", wwt_engine->number_of_neighbors_finished, wwt_engine->number_of_neighbors);
     } else {
         // Normal message, pass to final callback
+        // Use message timestamp to process it later at correct virtual time
+        MessageReceiveContext *ctx = g_new0(MessageReceiveContext, 1);
+        ctx->recv_cb = wwt_engine->recv_cb;
+        ctx->recv_opaque = wwt_engine->recv_opaque;
+        ctx->msg = *msg;
+        ctx->one_time_poll_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, (QEMUTimerCB *)process_message_at_virtual_time, ctx);
+
+        uint64_t current_virtual_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+        // Process at schedule or now + 1 which ever is later
+        uint64_t process_time = (ctx->msg.ts_ns > current_virtual_time + 1) ? ctx->msg.ts_ns : current_virtual_time + 1;
+        timer_mod(ctx->one_time_poll_timer, process_time);
+
         wwt_engine->recv_cb(wwt_engine->recv_opaque, msg->data, msg->len);
     }
 }

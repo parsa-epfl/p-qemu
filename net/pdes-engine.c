@@ -4,11 +4,6 @@
 #include "qemu/main-loop.h"
 #include "sysemu/runstate.h"
 
-struct message_receive_context {
-    PDESEngine *engine;
-    Message msg;
-    QEMUTimer *one_time_poll_timer;
-};
 
 uint64_t get_current_virtual_for_normal_message(PDESEngine *engine) {
     return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + engine->latencyns;

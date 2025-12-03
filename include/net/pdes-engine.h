@@ -8,7 +8,7 @@
 
 typedef struct PDESEngine PDESEngine;
 typedef struct PDESWWT PDESWWT;
-
+typedef struct MessageReceiveContext MessageReceiveContext;
 
 typedef void (*PDESFinalRecvCallback)(void *opaque, const uint8_t *data, size_t len);
 typedef void (*PDESRecvCallback)(void *opaque, Message *msg);
@@ -104,5 +104,16 @@ bool is_waiting_for_quanta(PDESWWT *wwt_engine);
 
 
 
+
+// Utility functions
+
+struct MessageReceiveContext {
+    PDESFinalRecvCallback recv_cb;
+    void *recv_opaque;
+    Message msg;
+    QEMUTimer *one_time_poll_timer;
+};
+
+void process_message_at_virtual_time(MessageReceiveContext *opaque);
 
 #endif
