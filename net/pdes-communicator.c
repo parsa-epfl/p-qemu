@@ -8,6 +8,8 @@
 #include "qemu/timer.h"
 
 
+PDESCommunicator * singleton_comm = NULL;
+
 typedef struct {
     volatile uint32_t write_idx;
     volatile uint32_t read_idx;
@@ -83,6 +85,11 @@ static int pdes_comm_init_ring(const char *shm_name,
 PDESCommunicator *pdes_comm_create(const char *shm_send_name,
                                    const char *shm_recv_name)
 {
+    if (singleton_comm != NULL) {
+        // Print error and exit
+        fprintf(stderr, "Error: Attempted to create multiple PDESCommunicator instances. Only one instance is allowed.\n");
+        exit(EXIT_FAILURE);
+    }
     PDESCommunicator *comm;
     size_t shm_size = sizeof(ShmRing);
 
@@ -107,6 +114,7 @@ PDESCommunicator *pdes_comm_create(const char *shm_send_name,
         return NULL;
     }
 
+    singleton_comm = comm;
     return comm;
 }
 
@@ -198,3 +206,4 @@ int pdes_comm_recv(PDESCommunicator *comm, Message *msg){
     }
     return msg->len;
 }
+

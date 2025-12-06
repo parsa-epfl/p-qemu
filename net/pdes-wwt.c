@@ -7,7 +7,7 @@
 
 
 int64_t get_current_virtual_for_sync_message(PDESEngine *engine) {
-    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    return get_universal_virtual_time(engine);
 }
 
 PDESWWT *pdes_engine_wwt_create(
@@ -81,13 +81,12 @@ void setup_wwt(PDESWWT *wwt_engine){
     // TODO above assertion fails due to how time is managed in qemu , and since other messages are sent out
     // The blow hack is used, so fake first time then a correction to the time here
     // TODO see if this can be fixed later
-    wwt_engine->first_sync_virtual_time = current_time;
     wwt_engine->engine->first_sync_virtual_time = current_time;
     // TODO below is caused by the same problem, this marks the time diff as not calculated so it will be recalculated on first message
     wwt_engine->engine->caclulated_time_diff = false;
 
 
-    printf("WWT: Setup called at virtual time %lu ns (first sync time was %lu ns).\n", current_time, wwt_engine->first_sync_virtual_time);
+    printf("WWT: Setup called at virtual time %lu ns (first sync time was %lu ns).\n", current_time, wwt_engine->engine->first_sync_virtual_time);
 
     printf("WWT: Setup called, sent initial sync message.\n");
 
@@ -108,7 +107,7 @@ void finish_quantum(PDESWWT *wwt_engine){
     send_sync(wwt_engine);
 }
 int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len){
-    Message msg = create_message(data, len, MSG_TYPE_NORMAL, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (wwt_engine->latencyns)); 
+    Message msg = create_message(data, len, MSG_TYPE_NORMAL, get_universal_virtual_time(wwt_engine->engine) + (wwt_engine->latencyns)); 
     return pdes_engine_send(wwt_engine->engine, &msg);
 }
 
@@ -116,8 +115,8 @@ int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len){
 void wwt_recivied_callback(void *opaque, Message *msg){
     PDESWWT *wwt_engine = (PDESWWT *)opaque;
 
-    int64_t translated_time = get_transformed_timestamp(wwt_engine->engine, msg);
-    int64_t current_virtual_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    int64_t translated_time = msg->ts_ns;
+    int64_t current_virtual_time_translated = get_universal_virtual_time(wwt_engine->engine);
 
 
     if(msg->type == MSG_TYPE_SYNC){
@@ -141,19 +140,18 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         ctx->msg = *msg;
         ctx->one_time_poll_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, (QEMUTimerCB *)process_message_at_virtual_time, ctx);
 
-        int64_t current_virtual_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         int64_t processing_time = translated_time;
 
         // Process at schedule or now + 1 which ever is later
         if (wwt_engine->should_sync) {
             // If should sync, process exactly at timestamp and throw an error if its in the past
-            if (translated_time < current_virtual_time) {
+            if (translated_time < current_virtual_time_translated) {
                 // Should not happen
-                printf("WWT Engine received message with timestamp %lu ns while current virtual time is %lu actual message time stamp of %lu ns and time diff of %lu ns\n", translated_time, current_virtual_time, msg->ts_ns, wwt_engine->engine->base_time_diff);
+                printf("WWT Engine received message with timestamp %lu ns while current virtual time is %lu\n", translated_time, current_virtual_time_translated);
                 assert(false && "Received message with timestamp in the past while should_sync is enabled");
             }
         }else{
-            processing_time = (translated_time > current_virtual_time + 1) ? translated_time : current_virtual_time + 1;
+            processing_time = (translated_time > current_virtual_time_translated + 1) ? translated_time : current_virtual_time_translated + 1;
         }
         timer_mod(ctx->one_time_poll_timer, processing_time);
 
@@ -170,7 +168,6 @@ bool is_waiting_for_quanta(PDESWWT *wwt_engine) {
     if (waiting == false){
         pdes_play(wwt_engine->engine);
     }
-    int64_t current_virtual_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     return waiting;
 }
 

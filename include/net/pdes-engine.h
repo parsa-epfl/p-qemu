@@ -44,8 +44,9 @@ struct PDESEngine {
     bool caclulated_time_diff;
     // Check if time diff has been calculated correctly and type conversion is ok
     int64_t first_sync_virtual_time;
-    int64_t neighbor_first_sync_virtual_time;
     int64_t base_time_diff;
+
+    bool drained;
 
     // WWT specific
     bool waiting_for_quanta;
@@ -73,6 +74,11 @@ void schedule_poll(void *opaque);
 void pdes_pause(void *opaque);
 void pdes_play(void *opaque);
 
+// drain: Define the function to send everything to neighbours through singleton used for example when savingvm
+// TODO check how generalizable this is for more neighbours and the other strategies
+PDESEngine *get_singleton_engine();
+int pdes_drain(PDESEngine *engine);
+
 
 
 
@@ -93,7 +99,6 @@ struct PDESWWT{
     QEMUTimer *setup_timer;
     QEMUTimer *quantum_timer;
 
-    int64_t first_sync_virtual_time;
 
     
 };
@@ -130,6 +135,6 @@ struct MessageReceiveContext {
 
 void process_message_at_virtual_time(MessageReceiveContext *opaque);
 
-int64_t get_transformed_timestamp(PDESEngine *engine, Message *msg);
+int64_t get_universal_virtual_time(PDESEngine *engine);
 
 #endif

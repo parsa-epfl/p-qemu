@@ -4,13 +4,21 @@
 #include "qemu/main-loop.h"
 #include "sysemu/runstate.h"
 
+// TODO this should be generlized to multiple neighbours later
+// For now singleton pdes engine
+extern PDESEngine *singleton_engine = NULL;
+
+PDESEngine *get_singleton_engine(){
+    return singleton_engine;
+}
+
 
 int64_t get_current_virtual_for_normal_message(PDESEngine *engine) {
-    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + engine->latencyns;
+    return get_universal_virtual_time(engine) + engine->latencyns;
 }
 
 int64_t get_current_virtual_for_destroy_message(PDESEngine *engine) {
-    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    return get_universal_virtual_time(engine);
 }
 
 PDESEngine *pdes_engine_create(
@@ -24,6 +32,8 @@ PDESEngine *pdes_engine_create(
     void *pause_status_opaque,
     int64_t first_sync_virtual_time
 ) {
+    // Show error if singleton was created before
+    assert(singleton_engine == NULL && "Singleton engine already created");
     PDESEngine *engine = g_new0(PDESEngine, 1);
     engine->comm = pdes_comm_create(shm_send, shm_recv);
     engine->needs_sync = sync;
@@ -39,9 +49,9 @@ PDESEngine *pdes_engine_create(
     engine->pause_status_opaque = pause_status_opaque;
 
     engine->first_sync_virtual_time = first_sync_virtual_time;
-    engine->neighbor_first_sync_virtual_time = -1;
     engine->caclulated_time_diff = false;
     engine->base_time_diff = 0;
+    engine->drained = false;
 
 
 
@@ -49,11 +59,13 @@ PDESEngine *pdes_engine_create(
     // Schedule it IMMEDIATELY
 
     // TODO look into optimizing this
-    timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+5000000); // 5 ms
+    timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+50000); // 5 microseconds
 
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    // TODO remove this field
     engine->first_sync_time = current_time;
     
+    singleton_engine = engine;
     printf(">>>>>>> NET_INIT_PDES CALLED <<<<<<<\n");
     return engine;
 }
@@ -74,6 +86,7 @@ int pdes_engine_send(PDESEngine *engine, Message *msg) {
     /* TODO: Add your PDES decision logic here */
     if (engine->first_sync_time == -1){
         if (msg->type == MSG_TYPE_SYNC){
+            // TODO remove this field
             engine->first_sync_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         } else {
             // Should not happen, as first message should be sync
@@ -86,19 +99,18 @@ int pdes_engine_send(PDESEngine *engine, Message *msg) {
 
 
 void process_message(PDESEngine *engine, Message *msg) {
-    if (engine->neighbor_first_sync_virtual_time == -1){
-        if (msg->type == MSG_TYPE_SYNC){
-            engine->neighbor_first_sync_virtual_time = msg->ts_ns;
-        } else {
-            // Should not happen, as first message should be sync
-            assert(false && "First message received is not a sync message");
-        }
-    } 
+    
+    if (msg->type==DRAIN_END){
+        engine->drained = true;
+    }else{
+        // Any other message that comes in, means that we need to get another drain signal
+        engine->drained = false;
+    }
+
     engine->recv_cb(engine->recv_opaque, msg);
 }
 
 void pdes_engine_poll(void *opaque) {
-    int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     PDESEngine *engine = opaque;
     Message msg;
 
@@ -121,7 +133,7 @@ void pdes_engine_poll(void *opaque) {
 void schedule_poll(void *opaque){
     PDESEngine *engine = opaque;
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
-    timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+5000000); // 5 ms
+    timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+50000); // 5 microseconds
 }
 
 void pdes_pause(void *opaque){
@@ -139,4 +151,28 @@ void pdes_pause(void *opaque){
 void pdes_play(void *opaque){
     PDESEngine *engine = opaque;
     engine->paused = false;
+}
+
+
+int pdes_drain(PDESEngine *engine){
+    // Not putting drained to false as we might have already recieved it
+
+    // Create a message for drain start, with the time being current virtual time
+    // letting others know we are done with our own drain and waiting for their messages
+    Message drain_start_msg = create_message(NULL, 0, DRAIN_END, get_current_virtual_for_normal_message(engine));
+
+
+    printf("PDES Engine starting drain process...\n");
+
+    while (engine->drained == false){
+        // Send drain start message repeatedly until drained is true
+        usleep(1000); // Sleep for 1 ms
+        pdes_engine_poll(engine);
+    }
+
+    printf("PDES Engine drain process completed.\n");
+
+    engine->drained = false;
+
+    return 0;
 }
