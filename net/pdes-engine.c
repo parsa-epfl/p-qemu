@@ -130,7 +130,7 @@ void process_message(PDESEngine *engine, Message *msg) {
             // TODO : Ugly solution for now to avoid deadlock:  create a host time timer, call this later, call it immidiately after this
             // TODO We will get stuck thanks to quanta, need to generalize later
             engine->checkpoint_initiate_timer = timer_new_ns(QEMU_CLOCK_REALTIME, initiate_checkpoint, NULL);
-            timer_mod(engine->checkpoint_initiate_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME)+1000);
+            timer_mod(engine->checkpoint_initiate_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
         }
     }else if (msg->type==DRAIN_END){
         printf("PDES Engine received drain end message, marking checkpoint as completed.\n");
