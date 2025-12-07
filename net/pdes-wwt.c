@@ -188,6 +188,7 @@ void quanta_sync(PDESWWT *wwt_engine){
         // schedule for next quantum after checkpoint is done, so that it's recalled immediately
         int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         // TODO check if this causes bugs for qemu, if it does, come up with system for both nodes to go forward to an agreed timestamp
+        // TODO just turn this into a new system of new lookahead for conservatives. for non conservatives you can just recompute
         timer_mod(wwt_engine->quantum_timer, current_time + 1);
     }else{
         // Schedule next quantum
