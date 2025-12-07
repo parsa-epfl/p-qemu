@@ -46,7 +46,12 @@ struct PDESEngine {
     int64_t first_sync_virtual_time;
     int64_t base_time_diff;
 
-    bool drained;
+    // Checkpoint specific
+    bool neighbour_drained;
+    QEMUTimer *drain_poll_timer;
+    bool checkpoint_in_progress;
+    QEMUTimer *checkpoint_initiate_timer;
+
 
     // WWT specific
     bool waiting_for_quanta;

@@ -79,6 +79,8 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+#include "net/pdes-engine.h"
+
 const unsigned int postcopy_ram_discard_version;
 
 // Defined in vl.c.
@@ -3272,6 +3274,12 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     }
 
     bdrv_drain_all_end();
+
+    
+    // Make sure you send and recieve everything that has been passed.
+    // Based on the sync logic it should be ok if something is processed in between still 
+    PDESEngine *engine = get_singleton_engine();
+    pdes_drain(engine);
 
     if (saved_vm_running) {
         vm_start();
