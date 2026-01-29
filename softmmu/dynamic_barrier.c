@@ -155,6 +155,8 @@ int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial
 
     barrier->delayed_interrupts = g_queue_new();
 
+    barrier->stop_request = false;
+
     return 0;
 }
 
@@ -194,20 +196,10 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
 
     if (waiting_count == barrier->threshold - 1) {
         barrier->current_cycle += quantum_size;
-        // barrier->stop_request = 0;
         bool broadcast_stop_request = 0;
-
-        if(!runstate_is_running()) {
-            // The machine is not running, so we can break.
-            *stop_request = 2;
-            dynamic_barrier_polling_release_lock(barrier);
-            return current_gen; // abandon the current quantum.
-        }
-
         barrier->count = 0;
 
         // Advance the virtual clock by the quantum size.
-
         int64_t current_virtual_time = increase_quantum_time();
         barrier->next_virtual_time_deadline_in_ns -= quantum_size;
 
@@ -250,12 +242,18 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                     qemu_notify_event();
 
                     // wait for the machine state to become suspended for VM.
-                    while (current_cpu->stop != true) {
+                    while (barrier->stop_request == false) {
                         sched_yield();
                     }
                 }
             }
             barrier->next_check_threshold += quantum_check_threshold;
+        }
+
+        // Check if there's a pending pause request from pause_all_vcpus
+        if (barrier->stop_request) {
+            broadcast_stop_request = 1;
+            barrier->stop_request = false;
         }
 
         barrier_result_t return_value;
@@ -273,8 +271,6 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         // increase the generation and notify others.
         atomic_store(&barrier->return_value.one_64, *((uint64_t *)&return_value));
 
-        // printf("CPU %d increase the quantum barrier generation. Current Quantum Generation: %u\n", current_cpu->cpu_index, current_gen + 1);
-
         dynamic_barrier_polling_release_lock(barrier); // we can release the generation here.
 
         if (broadcast_stop_request) {
@@ -288,8 +284,6 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
 
         barrier_result_t barrier_return_value;
 
-        uint64_t spinning_count = 0;
-
         // You just need to wait.
         while (true) {
             *((uint64_t *)&barrier_return_value) = atomic_load(&barrier->return_value.one_64);
@@ -298,144 +292,6 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                 current_cpu->sgi_sender_time_ns_valid = false;
                 break;
             }
-
-            ++spinning_count;
-
-            if (spinning_count % 1000000 == 0) {
-                spinning_count = 0;
-                // check the machine state.
-                if (!runstate_is_running()) {
-                    dynamic_barrier_polling_acquire_lock(barrier);
-                    // The machine is not running, so we can break.
-                    // Before breaking, we need to cancel the waiting count.
-                    if (current_gen == barrier->return_value.two_32.generation) {
-                        barrier->count -= 1;
-                        assert(barrier->count < barrier->threshold);
-                        *stop_request = 2;
-                        dynamic_barrier_polling_release_lock(barrier);
-                        return current_gen; // abandon the current quantum.
-                    }
-
-                    // this means the generation has been changed, so no need to decrease the count.
-                    // There should be no pending waiters, because they should be confined by the qemu big lock.
-                    assert(barrier->count == 0);
-                    if (barrier->return_value.two_32.stop_request) {
-                        *stop_request = 1;
-                    } else {
-                        *stop_request = 0;
-                    }
-
-                    dynamic_barrier_polling_release_lock(barrier);
-                    return current_gen + 1; // abandon the current quantum.
-                }
-            }
-
-            if (quantum_allow_interrupt_wakeup_inside) {
-                // Now, we need to check whether the CPU has work to do
-
-                // How many credits do I have?
-                if (current_cpu->quantum_budget <= 0) {
-                    // No need to continue.
-                    continue;
-                }
-
-                if (cpu_thread_is_idle(current_cpu)) {
-                    continue;
-                }
-
-                // Well, this means the CPU has work to do.
-                // Grab the lock.
-                dynamic_barrier_polling_acquire_lock(barrier);
-
-                if (barrier->return_value.two_32.generation != current_gen) {
-                    // The generation has changed, which mean the last quantum has been finished.
-                    // This thread also needs to move to the next quantum.
-                    dynamic_barrier_polling_release_lock(barrier);
-                    break;
-                }
-
-                // Now, we need to detach from the barrier.
-                assert(barrier->count > 0);
-                barrier->count -= 1;
-
-                // I need to go over all CPUs and understand what is their time.
-                CPUState *cpu;
-                double all_time = 0;
-                uint64_t cpu_count = 0;
-                CPU_FOREACH(cpu) {
-                    if (cpu == current_cpu) continue;
-                    if (cpu->whether_spinning_on_quantum && cpu->quantum_budget <= 0) {
-                        // This CPU is not running, so we can skip it.
-                        continue;
-                    }
-
-
-                    double this_cpu_time = cpu->quantum_budget * 100.0 / cpu->ip100ns;
-
-                    if (this_cpu_time < 0) {
-                        this_cpu_time = 0;
-                    }
-
-                    all_time += this_cpu_time;
-                    cpu_count += 1;
-                }
-
-                // Based on the time, calculate the new budget.
-                if (cpu_count > 0) {
-                    double average_time = all_time / cpu_count;
-                    // Now, we can calculate the new budget.
-                    int64_t new_budget = (int64_t)(average_time * current_cpu->ip100ns / 100.0);
-                    if (new_budget < 0) {
-                        new_budget = 0;
-                    }
-
-                    if (new_budget != 0) {
-                        current_cpu->wakeup_during_quantum_spinning += 1;
-                        if (new_budget < current_cpu->quantum_budget) {
-                            current_cpu->wakeup_while_given_ts_is_smaller_than_before += 1;
-                        }
-                    }
-
-                    if (new_budget < current_cpu->quantum_budget) {
-                        // This means the CPU has been sleeping for a long time.
-                        current_cpu->quantum_budget = new_budget;
-                    }
-                } else {
-                    current_cpu->quantum_budget = 0;
-                }
-
-                // As long as the budget is not depleted, we can continue to run.
-                if (current_cpu->quantum_budget <= 0) {
-                    // No need to continue.
-                    dynamic_barrier_polling_release_lock(barrier);
-                    continue;
-                }
-
-
-                //
-
-                // if (current_cpu->sgi_sender_time_ns_valid) {
-                //     // this means the CPU thread is waken up by a SGI. The source CPU has the time.
-                //     uint64_t sender_time = current_cpu->sgi_sender_remaining_time_ns;
-                //     uint64_t sender_generation = current_cpu->sgi_sender_quantum_generation;
-                //     assert(sender_generation == current_gen);
-                //     int64_t new_budget_on_acceptance = (sender_time * current_cpu->ip100ns) / 100;
-
-                //     // update the budget if the new budget is smaller than the current budget, meaning that the sleeping has happened.
-                //     if (new_budget_on_acceptance < current_cpu->quantum_budget) {
-                //         current_cpu->quantum_budget = new_budget_on_acceptance;
-                //     }
-
-                //     // cleared, meaning that the time is updated and the thread is waken up.
-                //     current_cpu->sgi_sender_time_ns_valid = false;
-                // }
-
-                // release the lock.
-                dynamic_barrier_polling_release_lock(barrier);
-
-                return current_gen;
-            }
-
         }
 
         // read the stop request set by the last thread.
@@ -512,4 +368,8 @@ void dynamic_barrier_push_delayed_interrupt(dynamic_barrier_polling_t *barrier, 
     info->irq = irq;
     info->level = level;
     g_queue_push_tail(barrier->delayed_interrupts, info);
+}
+
+void dynamic_barrier_broadcast_pause_all_cpu_requests(dynamic_barrier_polling_t *barrier) {
+    barrier->stop_request = true;
 }

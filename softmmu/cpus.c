@@ -452,7 +452,14 @@ void qemu_wait_io_event(CPUState *cpu)
 
         // I need to calculate the number of host miliseconds that I have been sleeping.
 
-        if (runstate_is_running()) {
+        if (cpu->stopped) {
+            // The CPU has been stopped by the system (e.g., via pause_all_vcpus).
+            // Wait until we're resumed.
+            qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
+            cpu->quantum_budget = 0; // force entering the barrier.
+            cpu->quantum_budget_depleted = 1;
+        } else if (!cpu->stop) {
+            // CPU is running normally (not being asked to stop).
             bool affiliated_with_quantum = cpu->ip100ns != 0 && quantum_enabled();
             if (affiliated_with_quantum) {
                 cpu->quantum_budget_depleted = 1;
@@ -460,14 +467,6 @@ void qemu_wait_io_event(CPUState *cpu)
             } else {
                 qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
             }
-        } else {
-            // well, there is no need to timeout. This is stopped by the system.
-            // RunState current_state = runstate_get();
-            // printf("Current runstate: %d\n", current_state);
-            qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
-            cpu->quantum_budget = 0; // force entering the barrier.
-            cpu->quantum_budget_depleted = 1;
-            // printf("CPU %d is woken up by the runstate change. Current Quantum Generation: %lu\n", cpu->cpu_index, cpu->quantum_generation);
         }
     }
     if (slept) {
@@ -602,12 +601,20 @@ void pause_all_vcpus(void)
     CPUState *cpu;
 
     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, false);
-    CPU_FOREACH(cpu) {
-        if (qemu_cpu_is_self(cpu)) {
-            qemu_cpu_stop(cpu, true);
-        } else {
-            cpu->stop = true;
-            qemu_cpu_kick(cpu);
+
+    if (quantum_enabled()) {
+        // In quantum mode, set a flag in the barrier so all vCPUs will pause
+        // together at the end of the current quantum, instead of sending
+        // individual pause requests that would be polled inefficiently.
+        dynamic_barrier_broadcast_pause_all_cpu_requests(&quantum_barrier);
+    } else {
+        CPU_FOREACH(cpu) {
+            if (qemu_cpu_is_self(cpu)) {
+                qemu_cpu_stop(cpu, true);
+            } else {
+                cpu->stop = true;
+                qemu_cpu_kick(cpu);
+            }
         }
     }
 

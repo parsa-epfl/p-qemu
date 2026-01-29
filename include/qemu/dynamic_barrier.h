@@ -53,6 +53,8 @@ typedef struct {
     GQueue *delayed_interrupts;
 
     volatile uint64_t *plugin_quantum_generation;
+
+    bool stop_request;
 } dynamic_barrier_polling_t;
 
 extern dynamic_barrier_polling_t quantum_barrier;
@@ -64,5 +66,6 @@ uint32_t dynamic_barrier_polling_increase_by_1(dynamic_barrier_polling_t *barrie
 int dynamic_barrier_polling_decrease_by_1(dynamic_barrier_polling_t *barrier);
 void dynamic_barrier_polling_reset(dynamic_barrier_polling_t *barrier);
 void dynamic_barrier_push_delayed_interrupt(dynamic_barrier_polling_t *barrier, qemu_irq irq, int level);
+void dynamic_barrier_broadcast_pause_all_cpu_requests(dynamic_barrier_polling_t *barrier);
 
 #endif

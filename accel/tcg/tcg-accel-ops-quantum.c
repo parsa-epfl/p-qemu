@@ -24,6 +24,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "sysemu/cpus.h"
 #include "sysemu/runstate.h"
 #include "sysemu/tcg.h"
 #include "qemu/plugin-pf.h"
@@ -307,6 +308,7 @@ continue_to_run:
                     }
 
                     if (stop_request) {
+                        cpu_stop_current();
                         break;
                     }
                 }
@@ -370,6 +372,7 @@ continue_to_run:
                     }
 
                     if (stop_request) {
+                        cpu_stop_current();
                         break;
                     }
                 }
@@ -440,6 +443,7 @@ continue_to_run:
 
 
                 if (stop_request) {
+                    cpu_stop_current();
                     break;
                 }
             } while (cpu->quantum_budget <= 0);
