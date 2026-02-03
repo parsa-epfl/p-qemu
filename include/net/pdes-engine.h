@@ -55,6 +55,9 @@ struct PDESEngine {
 
     // WWT specific
     bool waiting_for_quanta;
+
+    // node specific
+    bool master;
 };
 
 PDESEngine *pdes_engine_create(
@@ -66,7 +69,8 @@ PDESEngine *pdes_engine_create(
     void *opaque,
     PauseStatusCallBack pause_status_cb,
     void *pause_status_opaque,
-    int64_t first_sync_virtual_time
+    int64_t first_sync_virtual_time,
+    bool master
 );
 void pdes_engine_destroy(PDESEngine *engine);
 int pdes_engine_send(PDESEngine *engine, Message *msg);
@@ -114,7 +118,8 @@ PDESWWT *pdes_engine_wwt_create(
     bool sync,
     int64_t latencyns,
     PDESFinalRecvCallback cb, 
-    void *opaque
+    void *opaque,
+    bool master
 );
 void setup_wwt(PDESWWT *wwt_engine);
 void send_sync(PDESWWT *wwt_engine);

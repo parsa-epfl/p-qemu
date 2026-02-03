@@ -2983,6 +2983,23 @@ static struct {
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                   bool has_devices, strList *devices, SnapshotFormat format, Error **errp)
 {
+    PDESEngine *engine = get_singleton_engine();
+
+    if (engine != NULL) {
+        if (!engine->master){
+            // TODO this solution needs to be improved instead of flag through string
+            // check name size is at least 5 chars and the first 5 chars are "QPDES"
+            if (name != NULL && strlen(name) >= 5 && strncmp(name, "QPDES", 5) == 0) {
+                // This is a pdes snapshot, we need to drain the pdes before we can save the snapshot
+                // TODO see if any checks need to happen
+            }
+            else{
+                // We will skip any checkpointing as master decides when to checkpoint, need to return (caused by pdes)
+                return true;
+            } 
+        }
+    }
+ 
     BlockDriverState *bs;
     QEMUSnapshotInfo sn1, *sn = &sn1;
     int ret = -1, ret2;
@@ -3047,8 +3064,9 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     
     // Make sure you send and recieve everything that has been passed.
     // Based on the sync logic it should be ok if something is processed in between still 
-    PDESEngine *engine = get_singleton_engine();
-    pdes_drain(engine);
+    if (engine != NULL) {
+        pdes_drain(engine);
+    }
     // By here everything that has been passed to the engine should be processed. now we just need to save the devices + timers
 
 

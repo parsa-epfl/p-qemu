@@ -16,7 +16,8 @@ PDESWWT *pdes_engine_wwt_create(
     bool sync,
     int64_t latencyns,
     PDESFinalRecvCallback cb, 
-    void *opaque
+    void *opaque,
+    bool master
 ){
     // Create WWT specific engine
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -37,7 +38,8 @@ PDESWWT *pdes_engine_wwt_create(
         wwt,
         is_waiting_for_quanta,
         wwt,
-        time_to_setup
+        time_to_setup,
+        master
     );
     
 
@@ -60,10 +62,13 @@ PDESWWT *pdes_engine_wwt_create(
     timer_mod(wwt->setup_timer, time_to_setup);
 
 
-    // TODO implement should sync 
-    wwt->quantum_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, (QEMUTimerCB *)quanta_sync, wwt);
-    // Schedule for first quantum which is based on latencyns
-    timer_mod(wwt->quantum_timer, current_time + wwt->quantum_ns);
+    // TODO implement should sync
+    if (wwt->should_sync){
+        // TODO this condition should be before and should have a special setting that skips things when not synced
+        wwt->quantum_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, (QEMUTimerCB *)quanta_sync, wwt);
+        // Schedule for first quantum which is based on latencyns
+        timer_mod(wwt->quantum_timer, current_time + wwt->quantum_ns);
+    }
 
     return wwt;
 }
@@ -91,7 +96,9 @@ void setup_wwt(PDESWWT *wwt_engine){
     printf("WWT: Setup called, sent initial sync message.\n");
 
 
-    pdes_pause(wwt_engine->engine);
+    if (wwt_engine->should_sync){
+        pdes_pause(wwt_engine->engine);
+    }
 
     printf("WWT: All neighbors finished setup.\n");
     // Reset for next quantum
@@ -166,6 +173,7 @@ bool is_waiting_for_quanta(PDESWWT *wwt_engine) {
     pdes_engine_poll(wwt_engine->engine);
     bool waiting = wwt_engine->number_of_neighbors_finished < wwt_engine->number_of_neighbors;
     waiting = waiting && (!wwt_engine->engine->checkpoint_in_progress);
+    waiting = waiting && wwt_engine->should_sync;
     if (waiting == false){
         pdes_play(wwt_engine->engine);
     }

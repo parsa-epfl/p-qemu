@@ -32,7 +32,8 @@ PDESEngine *pdes_engine_create(
     void *opaque,
     PauseStatusCallBack pause_status_cb,
     void *pause_status_opaque,
-    int64_t first_sync_virtual_time
+    int64_t first_sync_virtual_time,
+    bool master
 ) {
     // Show error if singleton was created before
     assert(singleton_engine == NULL && "Singleton engine already created");
@@ -55,6 +56,8 @@ PDESEngine *pdes_engine_create(
     engine->base_time_diff = 0;
     engine->neighbour_drained = false;
     engine->checkpoint_in_progress = false;
+
+    engine->master = master;
 
 
 
@@ -189,6 +192,11 @@ void pdes_play(void *opaque){
 
 
 int pdes_drain(PDESEngine *engine){
+    // TODO list of things that should be turned off when no sync is needed
+    if (!engine->needs_sync){
+        // If sync is not needed, no drain is needed
+        return 0;
+    }
     engine->checkpoint_in_progress = true;
     // Not putting drained to false as we might have already recieved it
 

@@ -292,7 +292,8 @@
     'shm-send': 'str',
     'shm-recv': 'str',
     'latencyns': 'uint64',
-    'sync': 'bool'
+    'sync': 'bool',
+    'master': 'bool'
     } }
 
 ##
