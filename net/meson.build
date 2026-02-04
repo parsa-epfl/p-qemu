@@ -70,4 +70,5 @@ system_ss.add(files(
   'pdes-netdev.c',
   'pdes-wwt.c',
   'pdes-utility.c',
+  'pdes-checkpoint.c',
 ))

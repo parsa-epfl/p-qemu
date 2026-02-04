@@ -86,7 +86,7 @@ void pdes_play(void *opaque);
 // drain: Define the function to send everything to neighbours through singleton used for example when savingvm
 // TODO check how generalizable this is for more neighbours and the other strategies
 PDESEngine *get_singleton_engine();
-int pdes_drain(PDESEngine *engine);
+int pdes_drain(PDESEngine *engine, char * snapshot_name);
 
 
 
@@ -146,5 +146,6 @@ struct MessageReceiveContext {
 void process_message_at_virtual_time(MessageReceiveContext *opaque);
 
 int64_t get_universal_virtual_time(PDESEngine *engine);
+PDESWWT *get_singleton_wwt_engine();
 
 #endif

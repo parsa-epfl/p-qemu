@@ -4,7 +4,12 @@
 #include "qemu/main-loop.h"
 #include "sysemu/runstate.h"
 
+extern PDESWWT *singleton_wwt_engine = NULL;
 
+
+PDESWWT *get_singleton_wwt_engine(){
+    return singleton_wwt_engine;
+}
 
 int64_t get_current_virtual_for_sync_message(PDESEngine *engine) {
     return get_universal_virtual_time(engine);
@@ -19,6 +24,8 @@ PDESWWT *pdes_engine_wwt_create(
     void *opaque,
     bool master
 ){
+
+    assert(singleton_wwt_engine == NULL && "Singleton wwt engine already created");
     // Create WWT specific engine
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     int64_t time_to_setup = current_time + 1;
@@ -70,6 +77,7 @@ PDESWWT *pdes_engine_wwt_create(
         timer_mod(wwt->quantum_timer, current_time + wwt->quantum_ns);
     }
 
+    singleton_wwt_engine = wwt;
     return wwt;
 }
 

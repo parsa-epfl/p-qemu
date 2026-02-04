@@ -5,6 +5,7 @@
 #include "sysemu/runstate.h"
 #include "include/migration/snapshot.h"
 #include "include/sysemu/runstate.h"
+#include "net/pdes-checkpoint.h"
 
 // TODO this should be generlized to multiple neighbours later
 // For now singleton pdes engine
@@ -109,7 +110,12 @@ void initiate_checkpoint(void * opaque){
     Error *err = NULL;
     printf("PDES Engine performing systemic snapshot save during drain...\n");
 
-    save_snapshot("temp_snapshot",
+    // Get snapshot name from msg data
+    Message * msg = (Message *)opaque;
+    char snapshot_name[1000];
+    memcpy(snapshot_name, msg->data, msg->len);
+
+    save_snapshot(snapshot_name,
                 true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, &err);
     printf("PDES Engine completed systemic snapshot save during drain.\n");
     if (err) {
@@ -121,18 +127,20 @@ void initiate_checkpoint(void * opaque){
 void process_message(PDESEngine *engine, Message *msg) {
     
     // TODO both drain start and and end are based on just one neighbor for now, need to generalize later
+    printf("PDES Engine processing received message of type %u\n", msg->type);
     if (msg->type==DRAIN_START){
         printf("PDES Engine received drain end message, marking drained as true.\n");
         engine->neighbour_drained = true;
         engine->checkpoint_in_progress = true;
         // Check if we are still running and not saving
+        printf("got request to initiate checkpoint during drain with snapshot name: %s\n", msg->data);
         if (runstate_check(RUN_STATE_RUNNING)){
             printf("PDES Engine initiating systemic snapshot save after drain.\n");
 
             // TODO change this so the message includes snapshot name
             // TODO : Ugly solution for now to avoid deadlock:  create a host time timer, call this later, call it immidiately after this
             // TODO We will get stuck thanks to quanta, need to generalize later
-            engine->checkpoint_initiate_timer = timer_new_ns(QEMU_CLOCK_REALTIME, initiate_checkpoint, NULL);
+            engine->checkpoint_initiate_timer = timer_new_ns(QEMU_CLOCK_REALTIME, initiate_checkpoint, msg);
             timer_mod(engine->checkpoint_initiate_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
         }
     }else if (msg->type==DRAIN_END){
@@ -191,19 +199,26 @@ void pdes_play(void *opaque){
 }
 
 
-int pdes_drain(PDESEngine *engine){
+int pdes_drain(PDESEngine *engine, char * snapshot_name) {
     // TODO list of things that should be turned off when no sync is needed
-    if (!engine->needs_sync){
-        // If sync is not needed, no drain is needed
-        return 0;
-    }
+    // TODO turn this based on connected neighbours later
+    // if (!engine->needs_sync){
+    //     // If sync is not needed, no drain is needed
+    //     return 0;
+    // }
     engine->checkpoint_in_progress = true;
     // Not putting drained to false as we might have already recieved it
 
     // Create a message for drain start, with the time being current virtual time
     // letting others know we are done with our own drain and waiting for their messages
-    Message drain_start_msg = create_message(NULL, 0, DRAIN_START, get_universal_virtual_time(engine));
+    // set data as snapshot name
+    uint8_t snapshot_name_data[1000];
+    // Name is QPDES + snapshot name
+    size_t snapshot_name_len = strnlen(snapshot_name, sizeof(snapshot_name_data)) + 5;
+    snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data), "QPDES%s", snapshot_name);
+    Message drain_start_msg = create_message(snapshot_name_data, snapshot_name_len, DRAIN_START, get_universal_virtual_time(engine));
     pdes_comm_send(engine->comm, &drain_start_msg);
+    printf("created drain start message with snapshot name: %s\n", snapshot_name_data);
 
 
     printf("PDES Engine starting drain process...\n");
@@ -216,6 +231,7 @@ int pdes_drain(PDESEngine *engine){
 
     printf("PDES Engine drain process completed.\n");
 
+    // TODO IMPORTANT move this to after checkpoint is done
     Message drain_end_msg = create_message(NULL, 0, DRAIN_END, get_universal_virtual_time(engine));
     pdes_comm_send(engine->comm, &drain_end_msg);
     engine->neighbour_drained = false;

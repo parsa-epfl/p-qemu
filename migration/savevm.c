@@ -73,6 +73,7 @@
 #include "yank_functions.h"
 #include "sysemu/qtest.h"
 #include "options.h"
+#include "net/pdes-checkpoint.h"
 
 #include "qemu/plugin-pf.h"
 #include "migration/external_snapshot_util.h"
@@ -2983,6 +2984,7 @@ static struct {
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                   bool has_devices, strList *devices, SnapshotFormat format, Error **errp)
 {
+    printf("save_snapshot called with name=%s format=%d\n", name ? name : "NULL", format);
     PDESEngine *engine = get_singleton_engine();
 
     if (engine != NULL) {
@@ -2991,10 +2993,12 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             // check name size is at least 5 chars and the first 5 chars are "QPDES"
             if (name != NULL && strlen(name) >= 5 && strncmp(name, "QPDES", 5) == 0) {
                 // This is a pdes snapshot, we need to drain the pdes before we can save the snapshot
-                // TODO see if any checks need to happen
+                // remove "QPDES" from name to keep consistent
+                name = name + 5;
             }
             else{
                 // We will skip any checkpointing as master decides when to checkpoint, need to return (caused by pdes)
+                printf("Skipping snapshot as not master PDESEngine\n");
                 return true;
             } 
         }
@@ -3065,7 +3069,11 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     // Make sure you send and recieve everything that has been passed.
     // Based on the sync logic it should be ok if something is processed in between still 
     if (engine != NULL) {
-        pdes_drain(engine);
+        printf("Draining PDESEngine before snapshot\n");
+        pdes_drain(engine, name);
+        pdes_inflight_save_json(name);
+    }else{
+        printf("No PDESEngine found, skipping drain\n");
     }
     // By here everything that has been passed to the engine should be processed. now we just need to save the devices + timers
 
@@ -3495,6 +3503,7 @@ static void *uffd_on_demand_thread(void *main_ram) {
 bool load_snapshot(const char *name, const char *vmstate,
                    bool has_devices, strList *devices, int on_demand, Error **errp)
 {
+    PDESEngine *engine = get_singleton_engine();
     BlockDriverState *bs_vm_state;
     QEMUSnapshotInfo sn;
     QEMUFile *f;
@@ -3542,6 +3551,16 @@ bool load_snapshot(const char *name, const char *vmstate,
         error_setg(errp, "This is a disk-only snapshot. Revert to it "
                    " offline using qemu-img");
         return false;
+    }
+
+    if (engine != NULL){
+        // TODO make this usable by any strategy
+        PDESWWT *wwt_engine = get_singleton_wwt_engine();
+        int ret = pdes_inflight_restore_and_schedule(name, wwt_engine->recv_cb, wwt_engine->recv_opaque);
+        if (ret < 0) {
+            error_setg(errp, "Failed to restore in-flight operations for the snapshot");
+            return false;
+        }
     }
 
     /*
