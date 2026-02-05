@@ -9,8 +9,13 @@ typedef struct ScheduledMessage {
     QLIST_ENTRY(ScheduledMessage) next;
 } ScheduledMessage;
 
+// TODO change this to hashmap to be faster with lower overhead
 static QLIST_HEAD(, ScheduledMessage) pending_messages = QLIST_HEAD_INITIALIZER(pending_messages);
 static int pending_count = 0;
+
+int get_number_of_inflight_messages() {
+    return pending_count;
+}
 
 void pdes_inflight_add(Message *msg, int64_t scheduled_time_ns) {
     ScheduledMessage *entry = g_new0(ScheduledMessage, 1);
@@ -18,10 +23,12 @@ void pdes_inflight_add(Message *msg, int64_t scheduled_time_ns) {
     entry->scheduled_time_ns = scheduled_time_ns;
     QLIST_INSERT_HEAD(&pending_messages, entry, next);
     pending_count++;
+    printf("PEDS pending message added, total pending count: %d\n", pending_count);
 }
 
 void pdes_inflight_remove(Message *msg, int64_t scheduled_time_ns) {
     ScheduledMessage *entry, *tmp;
+    // TODO change to hashmap, because this for can become an overhead on each message popping
     QLIST_FOREACH_SAFE(entry, &pending_messages, next, tmp) {
         if (entry->scheduled_time_ns == scheduled_time_ns &&
             entry->msg.len == msg->len &&
@@ -29,9 +36,16 @@ void pdes_inflight_remove(Message *msg, int64_t scheduled_time_ns) {
             QLIST_REMOVE(entry, next);
             g_free(entry);
             pending_count--;
+            printf("PEDS pending message removed, total pending count: %d\n", pending_count);
             return;
         }
     }
+    // Print message not found, print queried message, its time stamp and then all existing messages
+    printf("PEDS pending message to remove not found. Queried message len: %u, scheduled_time_ns: %" PRId64 "\n", msg->len, scheduled_time_ns);
+    QLIST_FOREACH(entry, &pending_messages, next) {
+        printf("Existing message len: %u, scheduled_time_ns: %" PRId64 "\n", entry->msg.len, entry->scheduled_time_ns);
+    }
+    assert(false && "Message to remove not found in pending messages");
 }
 
 InflightMessageArray *pdes_inflight_get_all(void) {
@@ -72,7 +86,6 @@ int pdes_inflight_count(void) {
 
 int pdes_inflight_save_json(const char *checkpoint_name) {
     char *filename = get_json_file_name(checkpoint_name);
-    InflightMessageArray *arr = pdes_inflight_load_json(filename);
     FILE *fp = fopen(filename, "w");
     if (!fp) {
         return -1;
@@ -99,6 +112,8 @@ int pdes_inflight_save_json(const char *checkpoint_name) {
         fprintf(fp, "    }%s\n", (i < pending_count - 1) ? "," : "");
         i++;
     }
+
+    printf("Saved %d in-flight messages to %s\n", pending_count, filename);
 
     fprintf(fp, "  ]\n}\n");
     fclose(fp);
@@ -189,6 +204,7 @@ int pdes_inflight_restore_and_schedule(const char *checkpoint_name, PDESFinalRec
         ctx->msg = arr->messages[i];
         ctx->recv_cb = recv_cb;
         ctx->recv_opaque = recv_opaque;
+        ctx->timestamp_ns = arr->scheduled_times[i];
         ctx->one_time_poll_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, 
             (QEMUTimerCB *)process_message_at_virtual_time, ctx);
 

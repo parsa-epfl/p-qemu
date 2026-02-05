@@ -22,5 +22,6 @@ InflightMessageArray *pdes_inflight_load_json(const char *filename);
 int pdes_inflight_restore_and_schedule(const char *filename, PDESFinalRecvCallback recv_cb, void *recv_opaque);
 
 char *get_json_file_name(const char *base_name);
+int get_number_of_inflight_messages(void);
 
 #endif

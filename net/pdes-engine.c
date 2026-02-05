@@ -113,10 +113,14 @@ void initiate_checkpoint(void * opaque){
     // Get snapshot name from msg data
     Message * msg = (Message *)opaque;
     char snapshot_name[1000];
+    printf("initiate_checkpoint called with snapshot name: %s and message len: %u\n", msg->data, msg->len);
     memcpy(snapshot_name, msg->data, msg->len);
 
+    printf("current virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
     save_snapshot(snapshot_name,
                 true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, &err);
+    
+    printf("After 3 virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
     printf("PDES Engine completed systemic snapshot save during drain.\n");
     if (err) {
         error_reportf_err(err, "Error during temp snapshot save: ");
@@ -127,7 +131,6 @@ void initiate_checkpoint(void * opaque){
 void process_message(PDESEngine *engine, Message *msg) {
     
     // TODO both drain start and and end are based on just one neighbor for now, need to generalize later
-    printf("PDES Engine processing received message of type %u\n", msg->type);
     if (msg->type==DRAIN_START){
         printf("PDES Engine received drain end message, marking drained as true.\n");
         engine->neighbour_drained = true;
@@ -235,6 +238,9 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name) {
     Message drain_end_msg = create_message(NULL, 0, DRAIN_END, get_universal_virtual_time(engine));
     pdes_comm_send(engine->comm, &drain_end_msg);
     engine->neighbour_drained = false;
+
+
+    printf("After 2 virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
 
     return 0;
 }

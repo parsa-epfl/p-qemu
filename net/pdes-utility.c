@@ -18,7 +18,7 @@ void process_message_at_virtual_time(MessageReceiveContext *opaque) {
         assert(false && "process_message_at_virtual_time called with invalid message or no recv_cb");
     }
 
-    pdes_inflight_remove(&ctx->msg, timer_expire_time_ns(ctx->one_time_poll_timer));
+    pdes_inflight_remove(&ctx->msg, ctx->timestamp_ns);
     g_free(ctx->one_time_poll_timer);
     g_free(ctx);
 }

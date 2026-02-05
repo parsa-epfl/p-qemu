@@ -141,6 +141,7 @@ struct MessageReceiveContext {
     void *recv_opaque;
     Message msg;
     QEMUTimer *one_time_poll_timer;
+    int64_t timestamp_ns;
 };
 
 void process_message_at_virtual_time(MessageReceiveContext *opaque);

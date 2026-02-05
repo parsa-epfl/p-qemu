@@ -122,7 +122,12 @@ void finish_quantum(PDESWWT *wwt_engine){
     send_sync(wwt_engine);
 }
 int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len){
-    Message msg = create_message(data, len, MSG_TYPE_NORMAL, get_universal_virtual_time(wwt_engine->engine) + (wwt_engine->latencyns)); 
+    int64_t current_virtual_time = get_universal_virtual_time(wwt_engine->engine);
+    int64_t scheduled_time = current_virtual_time + wwt_engine->latencyns;
+    // time difference in seconds
+    float time_diff_sec = (scheduled_time - current_virtual_time) / 1e9;
+    printf("Message to be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns).\n", time_diff_sec, scheduled_time, current_virtual_time);
+    Message msg = create_message(data, len, MSG_TYPE_NORMAL, scheduled_time); 
     return pdes_engine_send(wwt_engine->engine, &msg);
 }
 
@@ -163,12 +168,18 @@ void wwt_recivied_callback(void *opaque, Message *msg){
             if (translated_time < current_virtual_time_translated) {
                 // Should not happen
                 printf("WWT Engine received message with timestamp %lu ns while current virtual time is %lu\n", translated_time, current_virtual_time_translated);
+                // TODO IMPORTANT address this properly later
                 assert(false && "Received message with timestamp in the past while should_sync is enabled");
             }
         }else{
             processing_time = (translated_time > current_virtual_time_translated + 1) ? translated_time : current_virtual_time_translated + 1;
         }
+        ctx->timestamp_ns = processing_time;
+        // calculate time diffrence in seconds (not ns) and print in how many seconds the message will be processed
+        float time_diff_sec = (processing_time - current_virtual_time_translated) / 1e9;
+        printf("Message will be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns, translated message time is %lu ns).\n", time_diff_sec, processing_time, current_virtual_time_translated, translated_time);
         timer_mod(ctx->one_time_poll_timer, processing_time);
+        pdes_inflight_add(msg, processing_time);
 
         wwt_engine->recv_cb(wwt_engine->recv_opaque, msg->data, msg->len);
     }

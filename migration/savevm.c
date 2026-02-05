@@ -2984,7 +2984,7 @@ static struct {
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                   bool has_devices, strList *devices, SnapshotFormat format, Error **errp)
 {
-    printf("save_snapshot called with name=%s format=%d\n", name ? name : "NULL", format);
+    printf("save_snapshot called with name=%s format=%d with number of inflight messages %d\n", name, format, pdes_inflight_count());
     PDESEngine *engine = get_singleton_engine();
 
     if (engine != NULL) {
@@ -3553,15 +3553,15 @@ bool load_snapshot(const char *name, const char *vmstate,
         return false;
     }
 
-    if (engine != NULL){
-        // TODO make this usable by any strategy
-        PDESWWT *wwt_engine = get_singleton_wwt_engine();
-        int ret = pdes_inflight_restore_and_schedule(name, wwt_engine->recv_cb, wwt_engine->recv_opaque);
-        if (ret < 0) {
-            error_setg(errp, "Failed to restore in-flight operations for the snapshot");
-            return false;
-        }
-    }
+    // if (engine != NULL){
+    //     // TODO make this usable by any strategy
+    //     PDESWWT *wwt_engine = get_singleton_wwt_engine();
+    //     int ret = pdes_inflight_restore_and_schedule(name, wwt_engine->recv_cb, wwt_engine->recv_opaque);
+    //     if (ret < 0) {
+    //         error_setg(errp, "Failed to restore in-flight operations for the snapshot");
+    //         return false;
+    //     }
+    // }
 
     /*
      * Flush the record/replay queue. Now the VM state is going
