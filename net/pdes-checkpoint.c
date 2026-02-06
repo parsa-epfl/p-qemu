@@ -23,7 +23,7 @@ void pdes_inflight_add(Message *msg, int64_t scheduled_time_ns) {
     entry->scheduled_time_ns = scheduled_time_ns;
     QLIST_INSERT_HEAD(&pending_messages, entry, next);
     pending_count++;
-    printf("PEDS pending message added, total pending count: %d\n", pending_count);
+    // printf("PEDS pending message added, total pending count: %d\n", pending_count);
 }
 
 void pdes_inflight_remove(Message *msg, int64_t scheduled_time_ns) {
@@ -36,7 +36,7 @@ void pdes_inflight_remove(Message *msg, int64_t scheduled_time_ns) {
             QLIST_REMOVE(entry, next);
             g_free(entry);
             pending_count--;
-            printf("PEDS pending message removed, total pending count: %d\n", pending_count);
+            // printf("PEDS pending message removed, total pending count: %d\n", pending_count);
             return;
         }
     }
