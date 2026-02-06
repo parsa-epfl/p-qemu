@@ -112,6 +112,7 @@ void setup_wwt(PDESWWT *wwt_engine){
     // Reset for next quantum
     // TODO address the bug that may be caused without sync (as you can see multiple sync messages at once)
     wwt_engine->number_of_neighbors_finished = 0;
+    printf("WWT: Setup starting at virtual time %lu ns and universal time off: %lu ns.\n", current_time, get_universal_virtual_time(wwt_engine->engine));
 }
 
 void send_sync(PDESWWT *wwt_engine){
@@ -126,7 +127,7 @@ int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len){
     int64_t scheduled_time = current_virtual_time + wwt_engine->latencyns;
     // time difference in seconds
     float time_diff_sec = (scheduled_time - current_virtual_time) / 1e9;
-    printf("Message to be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns).\n", time_diff_sec, scheduled_time, current_virtual_time);
+    // printf("Message to be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns).\n", time_diff_sec, scheduled_time, current_virtual_time);
     Message msg = create_message(data, len, MSG_TYPE_NORMAL, scheduled_time); 
     return pdes_engine_send(wwt_engine->engine, &msg);
 }
@@ -177,7 +178,7 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         ctx->timestamp_ns = processing_time;
         // calculate time diffrence in seconds (not ns) and print in how many seconds the message will be processed
         float time_diff_sec = (processing_time - current_virtual_time_translated) / 1e9;
-        printf("Message will be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns, translated message time is %lu ns).\n", time_diff_sec, processing_time, current_virtual_time_translated, translated_time);
+        // printf("Message will be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns, translated message time is %lu ns).\n", time_diff_sec, processing_time, current_virtual_time_translated, translated_time);
         timer_mod(ctx->one_time_poll_timer, processing_time);
         pdes_inflight_add(msg, processing_time);
 

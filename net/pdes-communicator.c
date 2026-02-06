@@ -121,7 +121,7 @@ PDESCommunicator *pdes_comm_create(const char *shm_send_name,
 
 Message create_message(const uint8_t *data, size_t len, uint8_t type, uint64_t ts_ns)
 {
-    Message msg;
+    Message msg = {0};
     msg.ts_ns = ts_ns;
     msg.len   = (uint32_t)len;
     msg.type  = type;

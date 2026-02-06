@@ -122,6 +122,7 @@ void initiate_checkpoint(void * opaque){
     
     printf("After 3 virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
     printf("PDES Engine completed systemic snapshot save during drain.\n");
+    g_free(msg);
     if (err) {
         error_reportf_err(err, "Error during temp snapshot save: ");
         exit(1);
@@ -143,7 +144,10 @@ void process_message(PDESEngine *engine, Message *msg) {
             // TODO change this so the message includes snapshot name
             // TODO : Ugly solution for now to avoid deadlock:  create a host time timer, call this later, call it immidiately after this
             // TODO We will get stuck thanks to quanta, need to generalize later
-            engine->checkpoint_initiate_timer = timer_new_ns(QEMU_CLOCK_REALTIME, initiate_checkpoint, msg);
+            Message *msg_copy = g_new(Message, 1);
+            *msg_copy = *msg;
+
+            engine->checkpoint_initiate_timer = timer_new_ns(QEMU_CLOCK_REALTIME, initiate_checkpoint, msg_copy);
             timer_mod(engine->checkpoint_initiate_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
         }
     }else if (msg->type==DRAIN_END){
@@ -215,13 +219,27 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name) {
     // Create a message for drain start, with the time being current virtual time
     // letting others know we are done with our own drain and waiting for their messages
     // set data as snapshot name
-    uint8_t snapshot_name_data[1000];
     // Name is QPDES + snapshot name
-    size_t snapshot_name_len = strnlen(snapshot_name, sizeof(snapshot_name_data)) + 5;
+    
+    uint8_t snapshot_name_data[1000];
+
+    int n = snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data),
+                    "QPDES%s", snapshot_name ? snapshot_name : "");
+
+    if (n < 0) {
+        // encoding/format error
+        return -1;
+    }
+
+    if (n >= sizeof(snapshot_name_data)) {
+        // Output was truncated, handle the error
+        fprintf(stderr, "Snapshot name is too long and was truncated\n");
+        return -1;
+    }
     snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data), "QPDES%s", snapshot_name);
-    Message drain_start_msg = create_message(snapshot_name_data, snapshot_name_len, DRAIN_START, get_universal_virtual_time(engine));
+    Message drain_start_msg = create_message(snapshot_name_data, (size_t)n, DRAIN_START, get_universal_virtual_time(engine));
     pdes_comm_send(engine->comm, &drain_start_msg);
-    printf("created drain start message with snapshot name: %s\n", snapshot_name_data);
+    printf("created drain start message with snapshot name: %s with size %zu and sent it\n", snapshot_name_data, (size_t)n);
 
 
     printf("PDES Engine starting drain process...\n");

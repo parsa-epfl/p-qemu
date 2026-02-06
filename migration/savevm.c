@@ -3070,7 +3070,11 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     // Based on the sync logic it should be ok if something is processed in between still 
     if (engine != NULL) {
         printf("Draining PDESEngine before snapshot\n");
-        pdes_drain(engine, name);
+        int drain_res = pdes_drain(engine, name);
+        if (drain_res < 0){
+            printf("Failed to drain PDESEngine before snapshot, error code %d\n", drain_res);
+            return false;
+        }
         pdes_inflight_save_json(name);
     }else{
         printf("No PDESEngine found, skipping drain\n");
