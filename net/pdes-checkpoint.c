@@ -223,3 +223,63 @@ char *get_json_file_name(const char *base_name){
     // Return  base_name + _in_flight.json
     return g_strdup_printf("%s_in_flight.json", base_name);
 }
+
+
+int validate_checkpoint(const char **check_point_name){
+    
+    char *name = *check_point_name;
+
+    // TODO this is a very basic implementation, need to add error handling and make it more robust later
+    PDESEngine *engine = get_singleton_engine();
+
+    if (engine != NULL) {
+        if (!engine->master){
+            // TODO this solution needs to be improved instead of flag through string
+            // check name size is at least 5 chars and the first 5 chars are "QPDES"
+            if (name != NULL && strlen(name) >= 5 && strncmp(name, "QPDES", 5) == 0) {
+                // This is a pdes snapshot initiated by master, we need to drain the pdes before we can save the snapshot
+                // QPDESinit_warmed goes through here, but one initiated by WormCache goes through the next else if statement
+                // remove "QPDES" from name to keep consistent
+                name = name + 5;
+                return true;
+            }else if (name != NULL && strcmp(name, "init_warmed") == 0) {
+                // TODO expand this to multiple nodes
+                // This is not the master so it can't initiate it, just let master know we are ready
+                printf("Received drain signal but not master, marking engine as done for init.\n");
+                int res = send_initiate_checkpoint_message(engine);
+                if (res == 0){
+                    printf("Sent checkpoint initiation message to master successfully, waiting for checkpoint initiation signal.\n");
+                    return false;
+                }
+                return false;
+            }else{
+                // We will skip any checkpointing as master decides when to checkpoint, need to return (caused by pdes)
+                printf("Skipping snapshot as not master PDESEngine\n");
+                return false;
+            } 
+        }else{
+            // Master
+            if (name != NULL && strcmp(name, "init_warmed") == 0){
+                // Master can initiate, but only once everyone is ready
+                if (engine->init_flag < 1){
+                    // if neighbours not ready yet (handled by engine when we get the message)
+                    printf("Master received checkpoint initiation signal but neighbors not ready yet, waiting for drain signals from neighbors.\n");
+                    engine->master_init = true;
+                    // Once others are ready will puush through
+                    return false;
+                }else{
+                    // Everyone is already ready just go for it
+                    printf("Master received checkpoint initiation signal and neighbors are ready, initiating checkpoint immediately.\n");
+                    return true;
+                }
+            }else{
+                // Any other type of checkpoint can just go through
+                return true;
+            }
+        }
+    }else{
+        // not multi-node, just go through with checkpointing as normal
+        return true;
+    }
+
+}

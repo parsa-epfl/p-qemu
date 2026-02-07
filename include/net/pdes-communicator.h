@@ -16,6 +16,7 @@ typedef struct PDESCommunicator PDESCommunicator;
 // TODO drain start is not used currently, but may be useful in future extensions, need to send it as well
 #define DRAIN_START 3
 #define DRAIN_END 4
+#define CHECKPOINT_INIT_STEP 5
 
 typedef struct {
     uint64_t ts_ns;       /* timestamp in nanoseconds */

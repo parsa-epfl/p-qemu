@@ -47,7 +47,7 @@ struct PDESEngine {
     int64_t base_time_diff;
 
     // Checkpoint specific
-    bool neighbour_drained;
+    int neighbour_drained;
     QEMUTimer *drain_poll_timer;
     bool checkpoint_in_progress;
     QEMUTimer *checkpoint_initiate_timer;
@@ -58,6 +58,8 @@ struct PDESEngine {
 
     // node specific
     bool master;
+    int init_flag;
+    bool master_init;
 };
 
 PDESEngine *pdes_engine_create(
@@ -148,5 +150,6 @@ void process_message_at_virtual_time(MessageReceiveContext *opaque);
 
 int64_t get_universal_virtual_time(PDESEngine *engine);
 PDESWWT *get_singleton_wwt_engine();
+int send_initiate_checkpoint_message(PDESEngine *engine);
 
 #endif

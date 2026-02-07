@@ -2987,22 +2987,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     printf("save_snapshot called with name=%s format=%d with number of inflight messages %d\n", name, format, pdes_inflight_count());
     PDESEngine *engine = get_singleton_engine();
 
-    if (engine != NULL) {
-        if (!engine->master){
-            // TODO this solution needs to be improved instead of flag through string
-            // check name size is at least 5 chars and the first 5 chars are "QPDES"
-            if (name != NULL && strlen(name) >= 5 && strncmp(name, "QPDES", 5) == 0) {
-                // This is a pdes snapshot, we need to drain the pdes before we can save the snapshot
-                // remove "QPDES" from name to keep consistent
-                name = name + 5;
-            }
-            else{
-                // We will skip any checkpointing as master decides when to checkpoint, need to return (caused by pdes)
-                printf("Skipping snapshot as not master PDESEngine\n");
-                return true;
-            } 
-        }
-    }
+    validate_checkpoint(&name);
  
     BlockDriverState *bs;
     QEMUSnapshotInfo sn1, *sn = &sn1;

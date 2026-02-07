@@ -150,7 +150,7 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         //     assert(false && "Received sync message with timestamp too far in the future or past");
         // }
 
-
+        // printf("WWT Engine received sync message, marking one neighbor as finished for current quantum.\n");
         wwt_engine->number_of_neighbors_finished += 1;
     } else if (msg->type == MSG_TYPE_NORMAL){
         // Normal message, pass to final callback
@@ -192,7 +192,6 @@ bool is_waiting_for_quanta(PDESWWT *wwt_engine) {
     // as this thread can block polling, call message reading after each sleep
     pdes_engine_poll(wwt_engine->engine);
     bool waiting = wwt_engine->number_of_neighbors_finished < wwt_engine->number_of_neighbors;
-    waiting = waiting && (!wwt_engine->engine->checkpoint_in_progress);
     waiting = waiting && wwt_engine->should_sync;
     if (waiting == false){
         pdes_play(wwt_engine->engine);
@@ -210,22 +209,12 @@ void quanta_sync(PDESWWT *wwt_engine){
     // same using is_waiting_for_quanta as setup, as its the same logic
     pdes_pause(wwt_engine->engine);
 
-    // TODO this has a race condition of edge (if checkpoint changes after pause), need to address
-    // if we came back due to checkpoint in progress
-    if (wwt_engine->engine->checkpoint_in_progress){
-        // schedule for next quantum after checkpoint is done, so that it's recalled immediately
-        int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-        // TODO check if this causes bugs for qemu, if it does, come up with system for both nodes to go forward to an agreed timestamp
-        // TODO just turn this into a new system of new lookahead for conservatives. for non conservatives you can just recompute
-        timer_mod(wwt_engine->quantum_timer, current_time + 1);
-    }else{
-        // Schedule next quantum
-        int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-        timer_mod(wwt_engine->quantum_timer, current_time + wwt_engine->quantum_ns);
-        // printf("WWT: Quantum sync completed at universal virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
+    // Schedule next quantum
+    int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    timer_mod(wwt_engine->quantum_timer, current_time + wwt_engine->quantum_ns);
+    // printf("WWT: Quantum sync completed at universal virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
 
-        // Reset for next quantum
-        wwt_engine->number_of_neighbors_finished = 0;
-    }
+    // Reset for next quantum
+    wwt_engine->number_of_neighbors_finished = 0;
     
 }
