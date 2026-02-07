@@ -146,6 +146,7 @@ void process_message(PDESEngine *engine, Message *msg) {
 
 
     // TODO both drain start and and end are based on just one neighbor for now, need to generalize later
+    printf("PDES Engine received message of type %u with timestamp %lu ns and len %u bytes.\n", msg->type, msg->ts_ns, msg->len);
     if (msg->type==DRAIN_START){
         printf("PDES Engine received drain end message, marking drained as true.\n");
         engine->checkpoint_in_progress = true;
@@ -213,7 +214,7 @@ void schedule_poll(void *opaque){
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
     engine->paused = true;
-    // printf("=========Going into PDES pause=========\n");
+    printf("=========Going into PDES pause=========\n");
     while (engine->paused){
         // Wait until not in the middle of processing
         // TODO all usleeps need to be addressed for speedup
@@ -221,8 +222,11 @@ void pdes_pause(void *opaque){
 
         // TODO again this is specific to QEMU and how sleeping is affected in ICOUNT mode, make it more generalized later
         engine->pause_status_cb(engine->pause_status_opaque);
+        // TODO we need this as if we pull and see drain message, it will be scheduled for future but never called. This is due to how qemu manages clocks. Fix this
+        qemu_clock_run_timers(QEMU_CLOCK_REALTIME);
     }
-    // printf("=========Exiting PDES pause=========\n");
+    vm_start();
+    printf("=========Exiting PDES pause=========\n");
 }
 
 void pdes_play(void *opaque){
