@@ -24,7 +24,7 @@ int pdes_inflight_restore_and_schedule(const char *filename, PDESFinalRecvCallba
 char *get_json_file_name(const char *base_name);
 int get_number_of_inflight_messages(void);
 
-int validate_checkpoint(const char **check_point_name);
+bool validate_checkpoint(const char **check_point_name);
 
 
 #endif

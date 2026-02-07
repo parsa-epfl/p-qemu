@@ -225,13 +225,12 @@ char *get_json_file_name(const char *base_name){
 }
 
 
-int validate_checkpoint(const char **check_point_name){
+bool validate_checkpoint(const char **check_point_name){
     
     char *name = *check_point_name;
 
     // TODO this is a very basic implementation, need to add error handling and make it more robust later
     PDESEngine *engine = get_singleton_engine();
-
     if (engine != NULL) {
         if (!engine->master){
             // TODO this solution needs to be improved instead of flag through string
@@ -240,17 +239,16 @@ int validate_checkpoint(const char **check_point_name){
                 // This is a pdes snapshot initiated by master, we need to drain the pdes before we can save the snapshot
                 // QPDESinit_warmed goes through here, but one initiated by WormCache goes through the next else if statement
                 // remove "QPDES" from name to keep consistent
-                name = name + 5;
+                *check_point_name = name + 5;
+                printf("modified checkpoint name for PDESEngine: %s and continuing with checkpointing.\n", *check_point_name);
                 return true;
             }else if (name != NULL && strcmp(name, "init_warmed") == 0) {
                 // TODO expand this to multiple nodes
                 // This is not the master so it can't initiate it, just let master know we are ready
                 printf("Received drain signal but not master, marking engine as done for init.\n");
                 int res = send_initiate_checkpoint_message(engine);
-                if (res == 0){
-                    printf("Sent checkpoint initiation message to master successfully, waiting for checkpoint initiation signal.\n");
-                    return false;
-                }
+                assert (res == 0 && "Failed to send checkpoint initiation message to master");
+                printf("Sent checkpoint initiation message to master successfully, waiting for checkpoint initiation signal.\n");
                 return false;
             }else{
                 // We will skip any checkpointing as master decides when to checkpoint, need to return (caused by pdes)
@@ -274,11 +272,13 @@ int validate_checkpoint(const char **check_point_name){
                 }
             }else{
                 // Any other type of checkpoint can just go through
+                printf("Master received checkpoint initiation signal for non-init checkpoint, initiating checkpoint immediately.\n");
                 return true;
             }
         }
     }else{
         // not multi-node, just go through with checkpointing as normal
+        printf("No PDESEngine found, assuming single node and allowing checkpointing to proceed as normal.\n");
         return true;
     }
 

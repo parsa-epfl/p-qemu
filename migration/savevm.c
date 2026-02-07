@@ -2987,7 +2987,10 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     printf("save_snapshot called with name=%s format=%d with number of inflight messages %d\n", name, format, pdes_inflight_count());
     PDESEngine *engine = get_singleton_engine();
 
-    validate_checkpoint(&name);
+    bool validate = validate_checkpoint(&name);
+    if (!validate){
+        return validate;
+    }
  
     BlockDriverState *bs;
     QEMUSnapshotInfo sn1, *sn = &sn1;
