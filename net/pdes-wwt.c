@@ -28,6 +28,7 @@ PDESWWT *pdes_engine_wwt_create(
     assert(singleton_wwt_engine == NULL && "Singleton wwt engine already created");
     // Create WWT specific engine
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    printf("WWT: Creating WWT engine at virtual time %lu ns.\n", current_time);
     int64_t time_to_setup = current_time;
 
     PDESWWT *wwt = g_new0(PDESWWT, 1);
@@ -71,7 +72,6 @@ PDESWWT *pdes_engine_wwt_create(
     timer_mod(wwt->setup_timer, time_to_setup);
 
 
-    // TODO implement should sync
     if (wwt->should_sync){
         // TODO this condition should be before and should have a special setting that skips things when not synced
         wwt->quantum_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, (QEMUTimerCB *)quanta_sync, wwt);
@@ -80,6 +80,7 @@ PDESWWT *pdes_engine_wwt_create(
     }
 
     singleton_wwt_engine = wwt;
+
     return wwt;
 }
 
@@ -98,6 +99,7 @@ void setup_wwt(PDESWWT *wwt_engine){
     
     //TODO change this name to setup wwt 
     wwt_engine->engine->first_sync_virtual_time = current_time;
+    printf("WWT: Setup called, setting first sync virtual time to %lu ns.\n", current_time);
     
 
     
@@ -137,6 +139,8 @@ int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len){
     float time_diff_sec = (scheduled_time - current_virtual_time) / 1e9;
     // printf("Message to be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns).\n", time_diff_sec, scheduled_time, current_virtual_time);
     Message msg = create_message(data, len, MSG_TYPE_NORMAL, scheduled_time); 
+    printf("WWT_SEND: raw=%ld universal=%ld scheduled=%ld latency=%ld\n",
+    qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), current_virtual_time, scheduled_time, wwt_engine->latencyns);
     return pdes_engine_send(wwt_engine->engine, &msg);
 }
 
@@ -193,12 +197,18 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         }else{
             processing_time = (translated_time > current_virtual_time_translated + 1) ? translated_time : current_virtual_time_translated + 1;
         }
-        ctx->timestamp_ns = processing_time;
+
+        int64_t raw_processing_time = processing_time + wwt_engine->engine->first_sync_virtual_time;
+        ctx->timestamp_ns = raw_processing_time;
         // calculate time diffrence in seconds (not ns) and print in how many seconds the message will be processed
         float time_diff_sec = (processing_time - current_virtual_time_translated) / 1e9;
         // printf("Message will be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns, translated message time is %lu ns).\n", time_diff_sec, processing_time, current_virtual_time_translated, translated_time);
-        timer_mod(ctx->one_time_poll_timer, processing_time);
-        pdes_inflight_add(msg, processing_time);
+        timer_mod(ctx->one_time_poll_timer, raw_processing_time);
+        pdes_inflight_add(msg, raw_processing_time);
+
+        printf("WWT_RECV: msg_ts=%ld universal_now=%ld raw_processing=%ld FST=%ld\n",
+        translated_time, current_virtual_time_translated, raw_processing_time,
+        wwt_engine->engine->first_sync_virtual_time);
 
     }
 }

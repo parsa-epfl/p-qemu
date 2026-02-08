@@ -168,7 +168,8 @@ int pdes_comm_send(PDESCommunicator *comm, Message *msg)
     while (next_write == ring->read_idx) {
         // TODO check if we can make this better
         // printf("PDES Comm ring buffer full, cannot send message now.\n");
-        // usleep(1000);  /* Wait for space to become available */
+        usleep(50);  /* Wait for space to become available */
+        // pdes_engine_poll(get_singleton_engine());
         // return -EAGAIN;
     }
 
