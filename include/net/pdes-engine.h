@@ -51,6 +51,7 @@ struct PDESEngine {
     QEMUTimer *drain_poll_timer;
     bool checkpoint_in_progress;
     QEMUTimer *checkpoint_initiate_timer;
+    QEMUBH *checkpoint_bh;
 
 
     // WWT specific
@@ -109,7 +110,8 @@ struct PDESWWT{
 
     QEMUTimer *setup_timer;
     QEMUTimer *quantum_timer;
-
+    GHashTable *sync_counts;
+    uint64_t current_quantum_round;
 
     
 };
@@ -151,5 +153,7 @@ void process_message_at_virtual_time(MessageReceiveContext *opaque);
 int64_t get_universal_virtual_time(PDESEngine *engine);
 PDESWWT *get_singleton_wwt_engine();
 int send_initiate_checkpoint_message(PDESEngine *engine);
+void sync_count_increment(GHashTable *table, uint64_t round);
+int sync_count_get(GHashTable *table, uint64_t round);
 
 #endif

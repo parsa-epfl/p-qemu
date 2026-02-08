@@ -133,6 +133,10 @@ void initiate_checkpoint(void * opaque){
     printf("After 3 virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
     printf("PDES Engine completed systemic snapshot save during drain.\n");
     g_free(msg);
+    qemu_bh_delete(engine->checkpoint_bh);
+    engine->checkpoint_bh = NULL;
+    vm_start();
+
     if (err) {
         error_reportf_err(err, "Error during temp snapshot save: ");
         exit(1);
@@ -145,7 +149,7 @@ void process_message(PDESEngine *engine, Message *msg) {
     engine->recv_cb(engine->recv_opaque, msg);
 
 
-    // printf("PDES Engine received message of type %u with timestamp %lu ns and len %u bytes.\n", msg->type, msg->ts_ns, msg->len);
+    printf("PDES Engine received message of type %u with timestamp %lu ns and len %u bytes.\n", msg->type, msg->ts_ns, msg->len);
 
     // TODO both drain start and and end are based on just one neighbor for now, need to generalize later
     if (msg->type==DRAIN_START){
@@ -161,8 +165,11 @@ void process_message(PDESEngine *engine, Message *msg) {
             Message *msg_copy = g_new(Message, 1);
             *msg_copy = *msg;
 
-            engine->checkpoint_initiate_timer = timer_new_ns(QEMU_CLOCK_REALTIME, initiate_checkpoint, msg_copy);
-            timer_mod(engine->checkpoint_initiate_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));   
+            // This is caused due not being able to call savevm from a dev. This solution causes problems for pause, hence using qemu_clock_run_all_timers/or specific run. TODO this needs to be fixed later
+            // engine->checkpoint_initiate_timer = timer_new_ns(QEMU_CLOCK_REALTIME, initiate_checkpoint, msg_copy);
+            // timer_mod(engine->checkpoint_initiate_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));   
+            engine->checkpoint_bh = qemu_bh_new(initiate_checkpoint, msg_copy);
+            qemu_bh_schedule(engine->checkpoint_bh);
             
         }else{
             // This variable is only used for master, TODO maybe move this
@@ -215,7 +222,7 @@ void schedule_poll(void *opaque){
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
     engine->paused = true;
-    // printf("=========Going into PDES pause=========\n");
+    printf("=========Going into PDES pause=========\n");
     while (engine->paused){
         // Wait until not in the middle of processing
         // TODO all usleeps need to be addressed for speedup
@@ -224,11 +231,15 @@ void pdes_pause(void *opaque){
         // TODO again this is specific to QEMU and how sleeping is affected in ICOUNT mode, make it more generalized later
         engine->pause_status_cb(engine->pause_status_opaque);
         // TODO we need this as if we pull and see drain message, it will be scheduled for future but never called. This is due to how qemu manages clocks. Fix this
-        qemu_clock_run_timers(QEMU_CLOCK_REALTIME);
+        // qemu_clock_run_timers(QEMU_CLOCK_REALTIME);
+        aio_bh_poll(qemu_get_aio_context());
+        // qemu_clock_run_all_timers();
     }
     // Since qemu_clock_run_timers can pause vm execution
     vm_start();
-    // printf("=========Exiting PDES pause=========\n");
+    printf("WWT: quanta_sync resumed. VM running state: %d, current virtual time: %lu ns\n", 
+       runstate_is_running(), get_universal_virtual_time(engine));
+    printf("=========Exiting PDES pause=========\n");
 }
 
 void pdes_play(void *opaque){
@@ -278,7 +289,7 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name) {
 
         Message drain_end_msg = create_message(NULL, 0, DRAIN_END, get_universal_virtual_time(engine));
         pdes_comm_send(engine->comm, &drain_end_msg);
-        engine->neighbour_drained = false;
+        engine->neighbour_drained = 0;
 
         printf("Everyone has drained and finished checkpointing.\n");
     }else{

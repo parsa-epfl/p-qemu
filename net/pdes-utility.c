@@ -37,3 +37,16 @@ int64_t get_universal_virtual_time(PDESEngine *engine) {
     // Transform the message timestamp
     return current_time - engine->first_sync_virtual_time;
 }
+
+void sync_count_increment(GHashTable *table, uint64_t round) {
+    gpointer key = GUINT_TO_POINTER((guint)round);
+    gpointer val = g_hash_table_lookup(table, key);
+    int count = val ? GPOINTER_TO_INT(val) : 0;
+    g_hash_table_insert(table, key, GINT_TO_POINTER(count + 1));
+}
+
+int sync_count_get(GHashTable *table, uint64_t round) {
+    gpointer key = GUINT_TO_POINTER((guint)round);
+    gpointer val = g_hash_table_lookup(table, key);
+    return val ? GPOINTER_TO_INT(val) : 0;
+}
