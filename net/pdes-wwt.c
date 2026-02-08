@@ -200,7 +200,6 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         timer_mod(ctx->one_time_poll_timer, processing_time);
         pdes_inflight_add(msg, processing_time);
 
-        wwt_engine->recv_cb(wwt_engine->recv_opaque, msg->data, msg->len);
     }
 }
 
@@ -239,5 +238,5 @@ void quanta_sync(PDESWWT *wwt_engine){
     // Do not set to 0, as if we have processed the next quantum's sync it will cause deadlock (i.e. the other qemu goes to end and waits while we are getting done processing this sync)
     wwt_engine->number_of_neighbors_finished -= wwt_engine->number_of_neighbors;
     wwt_engine->current_quantum_round++;
-    printf("WWT: Starting quantum %lu at virtual time %lu ns.\n", wwt_engine->current_quantum_round, get_universal_virtual_time(wwt_engine->engine));
+    // printf("WWT: Starting quantum %lu at virtual time %lu ns.\n", wwt_engine->current_quantum_round, get_universal_virtual_time(wwt_engine->engine));
 }
