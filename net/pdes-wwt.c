@@ -226,9 +226,9 @@ void quanta_sync(PDESWWT *wwt_engine){
     send_sync(wwt_engine);
 
     // same using is_waiting_for_quanta as setup, as its the same logic
-    printf("=============WWT: Waiting for neighbors to finish quantum at universal virtual time %lu ns.=============\n", get_universal_virtual_time(wwt_engine->engine));
+    // printf("=============WWT: Waiting for neighbors to finish quantum at universal virtual time %lu ns.=============\n", get_universal_virtual_time(wwt_engine->engine));
     pdes_pause(wwt_engine->engine);
-    printf("=============WWT: Finished waiting for neighbors to finish quantum at universal virtual time %lu ns.=============\n", get_universal_virtual_time(wwt_engine->engine));
+    // printf("=============WWT: Finished waiting for neighbors to finish quantum at universal virtual time %lu ns.=============\n", get_universal_virtual_time(wwt_engine->engine));
 
     // Schedule next quantum
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);

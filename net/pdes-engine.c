@@ -149,7 +149,7 @@ void process_message(PDESEngine *engine, Message *msg) {
     engine->recv_cb(engine->recv_opaque, msg);
 
 
-    printf("PDES Engine received message of type %u with timestamp %lu ns and len %u bytes.\n", msg->type, msg->ts_ns, msg->len);
+    // printf("PDES Engine received message of type %u with timestamp %lu ns and len %u bytes.\n", msg->type, msg->ts_ns, msg->len);
 
     // TODO both drain start and and end are based on just one neighbor for now, need to generalize later
     if (msg->type==DRAIN_START){
@@ -222,7 +222,7 @@ void schedule_poll(void *opaque){
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
     engine->paused = true;
-    printf("=========Going into PDES pause=========\n");
+    // printf("=========Going into PDES pause=========\n");
     while (engine->paused){
         // Wait until not in the middle of processing
         // TODO all usleeps need to be addressed for speedup
@@ -237,9 +237,9 @@ void pdes_pause(void *opaque){
     }
     // Since qemu_clock_run_timers can pause vm execution
     vm_start();
-    printf("WWT: quanta_sync resumed. VM running state: %d, current virtual time: %lu ns\n", 
-       runstate_is_running(), get_universal_virtual_time(engine));
-    printf("=========Exiting PDES pause=========\n");
+    // printf("WWT: quanta_sync resumed. VM running state: %d, current virtual time: %lu ns\n", 
+    //    runstate_is_running(), get_universal_virtual_time(engine));
+    // printf("=========Exiting PDES pause=========\n");
 }
 
 void pdes_play(void *opaque){
