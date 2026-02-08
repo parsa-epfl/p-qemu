@@ -125,7 +125,7 @@ void send_sync(PDESWWT *wwt_engine){
     uint64_t round = wwt_engine->current_quantum_round;
     Message sync_msg = create_message((uint8_t *)&round, sizeof(round), MSG_TYPE_SYNC, get_current_virtual_for_sync_message(wwt_engine->engine));
     pdes_engine_send(wwt_engine->engine, &sync_msg);
-    printf("WWT: Sent sync message at virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
+    // printf("WWT: Sent sync message at virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
 }
 void finish_quantum(PDESWWT *wwt_engine){
     send_sync(wwt_engine);
@@ -167,8 +167,8 @@ void wwt_recivied_callback(void *opaque, Message *msg){
 
         // TODO add assertions to the increment value
         sync_count_increment(wwt_engine->sync_counts, msg_round);
-        printf("WWT: Sync received for round %lu (count now %d)\n", 
-            msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
+        // printf("WWT: Sync received for round %lu (count now %d)\n", 
+        //     msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
 
     } else if (msg->type == MSG_TYPE_NORMAL){
         // Normal message, pass to final callback
