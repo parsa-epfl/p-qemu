@@ -196,19 +196,21 @@ void process_message(PDESEngine *engine, Message *msg) {
 
 void pdes_engine_poll(void *opaque) {
     PDESEngine *engine = opaque;
-    Message msg;
-
-    int len = pdes_comm_recv(engine->comm, &msg);
     
-    if (len == NO_MESSAGE) {
-        // No message available
-        // TODO see if anything needs to happen here
-    }
-    else if (len < 0) {
-        // Error handling
-        fprintf(stderr, "Error receiving message: %d\n", len);
-    }else{
-        process_message(engine, &msg);
+    while(true){
+        Message msg;
+        int res = pdes_comm_recv(engine->comm, &msg);
+        if (res == NO_MESSAGE) {
+            // No message to process
+            break;
+        } else if (res < 0 ) {
+            // Error occurred while polling
+            fprintf(stderr, "Error polling for messages: %d\n", res);
+            break;
+        } else {
+            // Message received, process it
+            process_message(engine, &msg);
+        }
     }
     // TODO add a flag so that when calling this manually we don't reschedule again and again
     schedule_poll(engine);
