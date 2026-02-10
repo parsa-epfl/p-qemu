@@ -929,4 +929,6 @@ typedef void (*qemu_plugin_flushing_local_tlb_t)(
 PF_API bool qemu_plugin_register_flushing_local_tlb_cb(
     qemu_plugin_flushing_local_tlb_t cb);
 
+PF_API void qemu_plugin_notify_fully_warmed(void);
+
 #endif /* QEMU_QEMU_PLUGIN_H */

@@ -231,5 +231,9 @@ bool qemu_plugin_register_flushing_local_tlb_cb(
   return true;
 }
 
+void qemu_plugin_notify_fully_warmed(void){
+    return;
+}
+
 
 #endif
