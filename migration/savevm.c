@@ -2984,7 +2984,7 @@ static struct {
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                   bool has_devices, strList *devices, SnapshotFormat format, Error **errp)
 {
-    printf("save_snapshot called with name=%s format=%d with number of inflight messages %d\n", name, format, pdes_inflight_count());
+    printf("save_snapshot called with name=%s format=%d with number of inflight messages %d and format %d\n", name, format, pdes_inflight_count(), format);
     PDESEngine *engine = get_singleton_engine();
 
     bool validate = validate_checkpoint(&name);
@@ -3058,7 +3058,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     // Based on the sync logic it should be ok if something is processed in between still 
     if (engine != NULL) {
         printf("Draining PDESEngine before snapshot\n");
-        int drain_res = pdes_drain(engine, name);
+        int drain_res = pdes_drain(engine, name, format);
         if (drain_res < 0){
             printf("Failed to drain PDESEngine before snapshot, error code %d\n", drain_res);
             return false;

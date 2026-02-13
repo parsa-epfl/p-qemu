@@ -33,6 +33,7 @@
 #include "migration/snapshot.h"
 #include "qapi/error.h"
 #include "hw/core/cpu.h"
+#include "net/pdes-engine.h"
 
 
 // All cyan callback functions
@@ -232,7 +233,14 @@ bool qemu_plugin_register_flushing_local_tlb_cb(
 }
 
 void qemu_plugin_notify_fully_warmed(void){
-    return;
+  PDESEngine *engine = get_singleton_engine();
+  if (engine == NULL){
+    // directly request savvm
+    // TODO address the hardcoded init_warmed name
+    save_snapshot("init_warmed", true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, NULL);
+  }else{
+    finish_initiate_checkpoint(engine);
+  }
 }
 
 

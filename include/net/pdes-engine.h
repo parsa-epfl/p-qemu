@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include "pdes-communicator.h"
 #include "qemu/timer.h"
+#include "migration/snapshot.h"
 
 typedef struct PDESEngine PDESEngine;
 typedef struct PDESWWT PDESWWT;
@@ -89,7 +90,7 @@ void pdes_play(void *opaque);
 // drain: Define the function to send everything to neighbours through singleton used for example when savingvm
 // TODO check how generalizable this is for more neighbours and the other strategies
 PDESEngine *get_singleton_engine();
-int pdes_drain(PDESEngine *engine, char * snapshot_name);
+int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format);
 
 
 
@@ -155,5 +156,6 @@ PDESWWT *get_singleton_wwt_engine();
 int send_initiate_checkpoint_message(PDESEngine *engine);
 void sync_count_increment(GHashTable *table, uint64_t round);
 int sync_count_get(GHashTable *table, uint64_t round);
+void finish_initiate_checkpoint(PDESEngine *engine);
 
 #endif

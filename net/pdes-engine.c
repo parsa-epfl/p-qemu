@@ -6,6 +6,7 @@
 #include "include/migration/snapshot.h"
 #include "include/sysemu/runstate.h"
 #include "net/pdes-checkpoint.h"
+#include "migration/snapshot.h"
 
 // TODO this should be generlized to multiple neighbours later
 // For now singleton pdes engine
@@ -121,14 +122,23 @@ void initiate_checkpoint(void * opaque){
     // Get snapshot name from msg data
     Message * msg = (Message *)opaque;
     char snapshot_name[1000];
-    printf("initiate_checkpoint called with snapshot name: %s and message len: %u\n", msg->data, msg->len);
-    memcpy(snapshot_name, msg->data, msg->len);
+    // printf("initiate_checkpoint called with snapshot name: %s and message len: %u\n", msg->data, msg->len);
+    // memcpy(snapshot_name, msg->data, msg->len);
+
+    // TODO verify new snapshot name formatting and parsing, for both send and receive
+    size_t name_len = msg->len - sizeof(SnapshotFormat);
+    memcpy(snapshot_name, msg->data, name_len);
+    snapshot_name[name_len] = '\0'; // null-terminate if needed
+
+    SnapshotFormat format;
+    memcpy(&format, msg->data + name_len, sizeof(SnapshotFormat));
+
 
     printf("current virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
 
     // As part of savesnap shot, qemu will pause things, and it will call drain, so by the time we send drain start message , everything is paused and there is nothing on the fly (spagetified due to qemu clock design)
     save_snapshot(snapshot_name,
-                true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, &err);
+                true, NULL, false, NULL, format &err);
     
     printf("After 3 virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
     printf("PDES Engine completed systemic snapshot save during drain.\n");
@@ -141,6 +151,22 @@ void initiate_checkpoint(void * opaque){
         error_reportf_err(err, "Error during temp snapshot save: ");
         exit(1);
     }
+}
+
+void initiate_checkpoint_master(void *context){
+    printf("Master initiating checkpoint after receiving initiation message from neighbor...\n");
+    PDESEngine *engine = get_singleton_engine();
+    if (!engine->master){
+        assert(false && "Only master should receive checkpoint initiation callback");
+    }
+    printf("Master initiating systemic snapshot save for checkpoint initiation...\n");
+    save_snapshot("init_warmed",
+                true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE, NULL);
+    qemu_bh_delete(engine->checkpoint_bh);
+    vm_start();
+    printf("Master completed systemic snapshot save for checkpoint initiation.\n");
+
+    return;
 }
 
 void process_message(PDESEngine *engine, Message *msg) {
@@ -184,11 +210,14 @@ void process_message(PDESEngine *engine, Message *msg) {
     }else if(msg->type==CHECKPOINT_INIT_STEP){
         printf("PDES Engine received checkpoint initiation message, initiating checkpoint.\n");
         engine->init_flag++;
+        // TODO expand this into multiple nodes
         if (engine->init_flag == 1 && engine->master){
             if (engine->master_init){
                 // if master is ready to initiate checkpoint start it
                 printf("Master is already initialized, initiating checkpoint immediately.\n");
-                pdes_drain(engine, "init_warmed");
+                QEMUBH *bh = qemu_bh_new(initiate_checkpoint_master, NULL);
+                engine->checkpoint_bh = bh;
+                qemu_bh_schedule(bh);
             }
         }
     }
@@ -249,7 +278,7 @@ void pdes_play(void *opaque){
     engine->paused = false;
 }
 
-int pdes_drain(PDESEngine *engine, char * snapshot_name) {
+int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) {
     // TODO list of things that should be turned off when no sync is needed
     // TODO turn this based on connected neighbours later
     // if (!engine->needs_sync){
@@ -276,7 +305,11 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name) {
             return -1;
         }
         snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data), "QPDES%s", snapshot_name);
-        Message drain_start_msg = create_message(snapshot_name_data, (size_t)n, DRAIN_START, get_universal_virtual_time(engine));
+        // Validate this formatting of string, for both send and receive
+        memcpy(snapshot_name_data + n, &format, sizeof(SnapshotFormat));
+        size_t total_len = (size_t)n + sizeof(SnapshotFormat);
+
+        Message drain_start_msg = create_message(snapshot_name_data, total_len, DRAIN_START, get_universal_virtual_time(engine));
         pdes_comm_send(engine->comm, &drain_start_msg);
         printf("created drain start message with snapshot name: %s with size %zu and sent it\n", snapshot_name_data, (size_t)n);
 
@@ -305,6 +338,7 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name) {
             usleep(100000); // Sleep for 100 ms
             pdes_engine_poll(engine);
         }
+        vm_start();
         printf("Checkpoint completed, resuming execution.\n");
     }
 
@@ -323,3 +357,27 @@ int send_initiate_checkpoint_message(PDESEngine *engine){
     return 0;
 }
 
+void finish_initiate_checkpoint(PDESEngine *engine){
+    printf("========================GOT signal for initiate_checkpoint========================\n");
+    if (engine->master){
+        // This is master, we can start checkpoint immediately
+        // TODO expand this to multiple nodes
+        engine->master_init = true;
+
+        if (engine->init_flag >= 1){
+            printf("Master received checkpoint initiation message, initiating checkpoint immediately.\n");
+            // pdes_drain(engine, "init_warmed", SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
+
+            // TODO remove this repetition
+            QEMUBH *bh = qemu_bh_new(initiate_checkpoint_master, NULL);
+            engine->checkpoint_bh = bh;
+            qemu_bh_schedule(bh);
+        }else{
+            printf("Master received checkpoint initiation message, but init flag is not set, marking master as ready and waiting for next checkpoint initiation message.\n");
+            return;
+        }
+    }else{
+        int res = send_initiate_checkpoint_message(engine);
+        assert (res == 0 && "Failed to send checkpoint initiation message to master");
+    }
+}
