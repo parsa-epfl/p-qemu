@@ -72,13 +72,6 @@ PDESWWT *pdes_engine_wwt_create(
     timer_mod(wwt->setup_timer, time_to_setup);
 
 
-    if (wwt->should_sync){
-        // TODO this condition should be before and should have a special setting that skips things when not synced
-        wwt->quantum_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, (QEMUTimerCB *)quanta_sync, wwt);
-        // Schedule for first quantum which is based on latencyns
-        timer_mod(wwt->quantum_timer, current_time + wwt->quantum_ns);
-    }
-
     singleton_wwt_engine = wwt;
 
     return wwt;
@@ -101,6 +94,13 @@ void setup_wwt(PDESWWT *wwt_engine){
     wwt_engine->engine->first_sync_virtual_time = current_time;
     printf("WWT: Setup called, setting first sync virtual time to %lu ns.\n", current_time);
     
+    PDESWWT *wwt = wwt_engine;
+    if (wwt->should_sync){
+        // TODO this condition should be before and should have a special setting that skips things when not synced
+        wwt->quantum_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, (QEMUTimerCB *)quanta_sync, wwt);
+        // Schedule for first quantum which is based on latencyns
+        timer_mod(wwt->quantum_timer, 0);
+    }
 
     
     // TODO below is caused by the same problem, this marks the time diff as not calculated so it will be recalculated on first message
@@ -221,13 +221,48 @@ bool is_waiting_for_quanta(PDESWWT *wwt_engine) {
     int count = sync_count_get(wwt_engine->sync_counts, wwt_engine->current_quantum_round);
     bool waiting = count < wwt_engine->number_of_neighbors;
     waiting = waiting && wwt_engine->should_sync;
-    if (waiting == false){
-        pdes_play(wwt_engine->engine);
-    }
+
     return waiting;
 }
 
+int64_t time_test=0;
+void wwt_sync_check(){
+    // Don't block but keep checking
 
+
+    bool waiting = is_waiting_for_quanta(get_singleton_wwt_engine());
+    int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    if (waiting){
+        // Reschedule check
+        timer_mod(get_singleton_wwt_engine()->sync_check_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 50000000);
+    } else {
+        // Finished waiting, can delete timer
+        // get engine
+        PDESWWT *wwt_engine = get_singleton_wwt_engine();
+        timer_free(wwt_engine->sync_check_timer);
+        wwt_engine->sync_check_timer = NULL;
+        // call play to resume
+        pdes_play(wwt_engine->engine);
+
+        // TODO number_of_neighbors_finished should be deprecated
+        wwt_engine->number_of_neighbors_finished -= wwt_engine->number_of_neighbors;
+        wwt_engine->current_quantum_round++;
+        // Schedule next quantum
+        // if (time_test != 0){
+        //     if (current_time != time_test) {
+        //         printf("Current time %lu is less than time_test %lu, this should not happen\n", current_time, time_test);
+        //     }
+        //     assert (current_time == time_test && "Current time should be equal to time_test at the start of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
+        // }
+
+        // Compute the next time for quantum
+        int64_t next_quantum_time = wwt_engine->current_quantum_round * wwt_engine->quantum_ns;
+        // Transform it to local time
+        int64_t next_quantum_time_local = next_quantum_time + wwt_engine->engine->first_sync_virtual_time;
+        timer_mod(wwt_engine->quantum_timer, next_quantum_time_local);
+        printf("=============WWT: Quantum sync completed at universal virtual time %lu ns. at round %lu.=============\n", get_universal_virtual_time(wwt_engine->engine), wwt_engine->current_quantum_round);
+    }
+}
 
 void quanta_sync(PDESWWT *wwt_engine){
     // Sends sync, pauses and waits for others sync, then resumes
@@ -235,18 +270,32 @@ void quanta_sync(PDESWWT *wwt_engine){
     send_sync(wwt_engine);
 
     // same using is_waiting_for_quanta as setup, as its the same logic
-    // printf("=============WWT: Waiting for neighbors to finish quantum at universal virtual time %lu ns.=============\n", get_universal_virtual_time(wwt_engine->engine));
+    int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    time_test = current_time;
+    if (wwt_engine->current_quantum_round > 2){
+        int64_t expected_time = (wwt_engine->current_quantum_round ) * wwt_engine->quantum_ns;
+        int64_t universal_time = get_universal_virtual_time(wwt_engine->engine);
+        if (expected_time != universal_time) {
+            printf("Current time %lu is less than expected time %lu at round %lu, this should not happen\n", universal_time, expected_time, wwt_engine->current_quantum_round);
+        }
+        assert (universal_time == expected_time && "Current time should be greater than or equal to expected time at the start of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
+    }
+    printf("=============WWT: Waiting for neighbors to finish quantum at universal virtual time %lu ns. at round %lu.=============\n", get_universal_virtual_time(wwt_engine->engine), wwt_engine->current_quantum_round);
     pdes_pause(wwt_engine->engine);
     // printf("=============WWT: Finished waiting for neighbors to finish quantum at universal virtual time %lu ns.=============\n", get_universal_virtual_time(wwt_engine->engine));
 
-    // Schedule next quantum
-    int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    timer_mod(wwt_engine->quantum_timer, current_time + wwt_engine->quantum_ns);
-    // printf("WWT: Quantum sync completed at universal virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
+
+    // Create a timer to check sync status without blocking
+    assert(wwt_engine->sync_check_timer == NULL && "Sync check timer should be NULL before creating");
+    wwt_engine->sync_check_timer = timer_new_ns(QEMU_CLOCK_REALTIME, (QEMUTimerCB *)wwt_sync_check, wwt_engine);
+    // Schedule first check immidiately and then reschedule inside the callback until sync is done
+    timer_mod(wwt_engine->sync_check_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 1);
+
+
+
 
     // Reset for next quantum
     // Do not set to 0, as if we have processed the next quantum's sync it will cause deadlock (i.e. the other qemu goes to end and waits while we are getting done processing this sync)
-    wwt_engine->number_of_neighbors_finished -= wwt_engine->number_of_neighbors;
-    wwt_engine->current_quantum_round++;
+    
     // printf("WWT: Starting quantum %lu at virtual time %lu ns.\n", wwt_engine->current_quantum_round, get_universal_virtual_time(wwt_engine->engine));
 }

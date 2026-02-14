@@ -62,6 +62,9 @@ struct PDESEngine {
     bool master;
     int init_flag;
     bool master_init;
+
+    // V2 timer impl
+    QEMUBH *pause_bh;
 };
 
 PDESEngine *pdes_engine_create(
@@ -113,6 +116,12 @@ struct PDESWWT{
     QEMUTimer *quantum_timer;
     GHashTable *sync_counts;
     uint64_t current_quantum_round;
+
+
+    
+    // V2 timer impl
+    // Timer to check sync status without blocking
+    QEMUTimer *sync_check_timer;
 
     
 };

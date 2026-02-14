@@ -62,7 +62,7 @@ PDESEngine *pdes_engine_create(
     engine->master = master;
     engine->init_flag = 0;
     engine->master_init = false;
-
+    engine->pause_bh = NULL;
 
 
 
@@ -138,7 +138,7 @@ void initiate_checkpoint(void * opaque){
 
     // As part of savesnap shot, qemu will pause things, and it will call drain, so by the time we send drain start message , everything is paused and there is nothing on the fly (spagetified due to qemu clock design)
     save_snapshot(snapshot_name,
-                true, NULL, false, NULL, format &err);
+                true, NULL, false, NULL, format, &err);
     
     printf("After 3 virtual time during checkpoint initiation: %lu ns\n", get_universal_virtual_time(get_singleton_engine()));
     printf("PDES Engine completed systemic snapshot save during drain.\n");
@@ -250,32 +250,48 @@ void schedule_poll(void *opaque){
     timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+50000); // 5 microseconds
 }
 
+void pdes_pause_bh(void *opaque){
+    PDESEngine *engine = opaque;
+
+    vm_stop(RUN_STATE_SAVE_VM);
+    // Remove the bottom half
+    qemu_bh_delete(engine->pause_bh);
+    engine->pause_bh = NULL;
+    printf("PDES Engine paused the VM at universal virtual time %lu ns.\n", get_universal_virtual_time(engine));
+}
+
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
     engine->paused = true;
-    // printf("=========Going into PDES pause=========\n");
-    while (engine->paused){
-        // Wait until not in the middle of processing
-        // TODO all usleeps need to be addressed for speedup
-        usleep(1000); // Sleep for 1 ms
+    // Create bh
+    // Make sure bh is empty
+    // assert(engine->pause_bh == NULL && "Pause BH is not NULL when trying to pause, this should not happen");
+    // engine->pause_bh = qemu_bh_new(pdes_pause_bh, engine);
+    // qemu_bh_schedule(engine->pause_bh);
+    
+    // qemu_system_vmstop_request_prepare();
+    // qemu_system_vmstop_request(RUN_STATE_PAUSED);
 
-        // TODO again this is specific to QEMU and how sleeping is affected in ICOUNT mode, make it more generalized later
-        engine->pause_status_cb(engine->pause_status_opaque);
-        // TODO we need this as if we pull and see drain message, it will be scheduled for future but never called. This is due to how qemu manages clocks. Fix this
-        // qemu_clock_run_timers(QEMU_CLOCK_REALTIME);
-        aio_bh_poll(qemu_get_aio_context());
-        // qemu_clock_run_all_timers();
-    }
-    // Since qemu_clock_run_timers can pause vm execution
-    vm_start();
-    // printf("WWT: quanta_sync resumed. VM running state: %d, current virtual time: %lu ns\n", 
-    //    runstate_is_running(), get_universal_virtual_time(engine));
-    // printf("=========Exiting PDES pause=========\n");
+    assert(engine->pause_bh == NULL);
+    engine->pause_bh = qemu_bh_new(pdes_pause_bh, engine);
+    qemu_bh_schedule(engine->pause_bh);
+
+
+    return;
 }
 
+
 void pdes_play(void *opaque){
+    // TODO add doc where this can be called from (not virt)
     PDESEngine *engine = opaque;
     engine->paused = false;
+    // Create bh
+    // Make sure bh is empty
+    // assert(engine->pause_bh == NULL && "Pause BH is not NULL when trying to play, this should not happen");
+    // engine->pause_bh = qemu_bh_new(play_bh, engine);
+    // qemu_bh_schedule(engine->pause_bh);
+    vm_start();
+    return;
 }
 
 int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) {
