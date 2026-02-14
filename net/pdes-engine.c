@@ -257,7 +257,6 @@ void pdes_pause_bh(void *opaque){
     // Remove the bottom half
     qemu_bh_delete(engine->pause_bh);
     engine->pause_bh = NULL;
-    printf("PDES Engine paused the VM at universal virtual time %lu ns.\n", get_universal_virtual_time(engine));
 }
 
 void pdes_pause(void *opaque){
