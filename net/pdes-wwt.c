@@ -169,10 +169,19 @@ void wwt_recivied_callback(void *opaque, Message *msg){
             memcpy(&msg_round, msg->data, sizeof(uint64_t));
         }
 
+
+        int max_round_distnce = 0;
+        if (wwt_engine->finished_quantum){
+            max_round_distnce = 1;
+        }
         // TODO add assertions to the increment value
+        bool valid_round = (msg_round == wwt_engine->current_quantum_round) || (wwt_engine->finished_quantum && msg_round == wwt_engine->current_quantum_round + 1);
+        if (!valid_round) {
+            printf("WWT Engine received sync message for round %lu but current round is %lu and finished_quantum is %d\n", msg_round, wwt_engine->current_quantum_round, wwt_engine->finished_quantum);
+        }
+        assert (valid_round && "Received sync message for wrong quantum round, this should not happen");
         sync_count_increment(wwt_engine->sync_counts, msg_round);
-        // printf("WWT: Sync received for round %lu (count now %d)\n", 
-        //     msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
+        // printf("WWT: Sync received for round %lu (count now %d)\n", msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
 
     } else if (msg->type == MSG_TYPE_NORMAL){
         // Normal message, pass to final callback
@@ -219,7 +228,7 @@ bool is_waiting_for_quanta(PDESWWT *wwt_engine) {
     // as this thread can block polling, call message reading after each sleep
     pdes_engine_poll(wwt_engine->engine);
     int count = sync_count_get(wwt_engine->sync_counts, wwt_engine->current_quantum_round);
-    bool waiting = count < wwt_engine->number_of_neighbors;
+    bool waiting = count < 1;
     waiting = waiting && wwt_engine->should_sync;
 
     return waiting;
@@ -247,6 +256,7 @@ void wwt_sync_check(){
         // TODO number_of_neighbors_finished should be deprecated
         wwt_engine->number_of_neighbors_finished -= wwt_engine->number_of_neighbors;
         wwt_engine->current_quantum_round++;
+        wwt_engine->finished_quantum = false;
         // Schedule next quantum
         // if (time_test != 0){
         //     if (current_time != time_test) {
@@ -260,12 +270,14 @@ void wwt_sync_check(){
         // Transform it to local time
         int64_t next_quantum_time_local = next_quantum_time + wwt_engine->engine->first_sync_virtual_time;
         timer_mod(wwt_engine->quantum_timer, next_quantum_time_local);
+        // printf("===================WWT: Finished quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round - 1, current_time, get_universal_virtual_time(wwt_engine->engine));
     }
 }
 
 void quanta_sync(PDESWWT *wwt_engine){
     // Sends sync, pauses and waits for others sync, then resumes
     // printf("WWT: Starting quantum sync at universal virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
+    wwt_engine->finished_quantum = true;
     send_sync(wwt_engine);
 
     // same using is_waiting_for_quanta as setup, as its the same logic
@@ -279,6 +291,7 @@ void quanta_sync(PDESWWT *wwt_engine){
         }
         assert (universal_time == expected_time && "Current time should be greater than or equal to expected time at the start of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
     }
+    // printf("===================WWT: going to pause for quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round, current_time, get_universal_virtual_time(wwt_engine->engine));
     pdes_pause(wwt_engine->engine);
 
 

@@ -145,7 +145,6 @@ void initiate_checkpoint(void * opaque){
     g_free(msg);
     qemu_bh_delete(engine->checkpoint_bh);
     engine->checkpoint_bh = NULL;
-    vm_start();
 
     if (err) {
         error_reportf_err(err, "Error during temp snapshot save: ");
@@ -163,7 +162,6 @@ void initiate_checkpoint_master(void *context){
     save_snapshot("init_warmed",
                 true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE, NULL);
     qemu_bh_delete(engine->checkpoint_bh);
-    vm_start();
     printf("Master completed systemic snapshot save for checkpoint initiation.\n");
 
     return;
@@ -336,7 +334,7 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) 
             usleep(1000); // Sleep for 1 ms
             pdes_engine_poll(engine);
         }
-
+        
         Message drain_end_msg = create_message(NULL, 0, DRAIN_END, get_universal_virtual_time(engine));
         pdes_comm_send(engine->comm, &drain_end_msg);
         engine->neighbour_drained = 0;
@@ -353,10 +351,9 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) 
             usleep(100000); // Sleep for 100 ms
             pdes_engine_poll(engine);
         }
-        vm_start();
         printf("Checkpoint completed, resuming execution.\n");
     }
-
+    pdes_inflight_save_json(snapshot_name);
     return 0;
 }
 

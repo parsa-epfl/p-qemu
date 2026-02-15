@@ -3063,7 +3063,6 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             printf("Failed to drain PDESEngine before snapshot, error code %d\n", drain_res);
             return false;
         }
-        pdes_inflight_save_json(name);
     }else{
         printf("No PDESEngine found, skipping drain\n");
     }

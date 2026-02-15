@@ -122,6 +122,7 @@ struct PDESWWT{
     // V2 timer impl
     // Timer to check sync status without blocking
     QEMUTimer *sync_check_timer;
+    bool finished_quantum;
 
     
 };
