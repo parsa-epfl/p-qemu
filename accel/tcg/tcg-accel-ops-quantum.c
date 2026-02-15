@@ -286,7 +286,7 @@ continue_to_run:
                     uint32_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier,
                         cpu->quantum_generation,
-                        &stop_request,
+                        &stop_request
                     );
 
                     cpu->whether_spinning_on_quantum = false;
