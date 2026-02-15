@@ -50,9 +50,6 @@ typedef struct {
     } return_value;
     uint64_t __padding5__[7];
 
-    uint64_t timer_update_request;
-    int64_t next_virtual_time_deadline_in_ns;
-
     uint64_t last_timestamp;
     uint64_t total_diff;
     time_histogram_t *histogram[128]; // each core has its own histogram.
@@ -63,8 +60,8 @@ typedef struct {
 
 int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial_threshold);
 int dynamic_barrier_polling_destroy(dynamic_barrier_polling_t *barrier);
-uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32_t private_generation, int *stop_request, bool check_time); // return the current quantum generation after waiting for the barrier.
-uint32_t dynamic_barrier_polling_increase_by_1(dynamic_barrier_polling_t *barrier); // return the current generation while this thread is added. 
+uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32_t private_generation, int *stop_request); // return the current quantum generation after waiting for the barrier.
+uint32_t dynamic_barrier_polling_increase_by_1(dynamic_barrier_polling_t *barrier); // return the current generation while this thread is added.
 int dynamic_barrier_polling_decrease_by_1(dynamic_barrier_polling_t *barrier);
 void dynamic_barrier_polling_reset(dynamic_barrier_polling_t *barrier);
 

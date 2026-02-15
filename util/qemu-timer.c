@@ -287,47 +287,6 @@ int64_t qemu_clock_deadline_ns_all(QEMUClockType type, int attr_mask)
     return deadline;
 }
 
-int64_t qemu_clock_deadline_ns_virtual_clock_for_quantum(int64_t current_vtime){
-    int64_t deadline = -1;
-    int64_t delta;
-    int64_t expire_time;
-    QEMUTimer *ts;
-    QEMUTimerList *timer_list;
-    QEMUClock *clock = qemu_clock_ptr(QEMU_CLOCK_VIRTUAL);
-
-    if (!clock->enabled) {
-        return -1;
-    }
-
-    QLIST_FOREACH(timer_list, &clock->timerlists, list) {
-        if (!qatomic_read(&timer_list->active_timers)) {
-            continue;
-        }
-        qemu_mutex_lock(&timer_list->active_timers_lock);
-        ts = timer_list->active_timers;
-        /* Skip all external timers */
-        while (ts) {
-            expire_time = ts->expire_time;
-            if (expire_time > current_vtime) {
-                break;
-            }
-            ts = ts->next;
-        }
-        if (!ts) {
-            qemu_mutex_unlock(&timer_list->active_timers_lock);
-            continue;
-        }
-        delta = expire_time - current_vtime;
-        if (delta <= 0) {
-            delta = 0;
-        }
-        deadline = qemu_soonest_timeout(deadline, delta);
-        qemu_mutex_unlock(&timer_list->active_timers_lock);
-    }
-
-    return deadline;
-}
-
 QEMUClockType timerlist_get_clock(QEMUTimerList *timer_list)
 {
     return timer_list->clock->type;

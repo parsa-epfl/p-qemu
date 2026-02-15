@@ -227,7 +227,6 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu->enter_idle_time = 0;
     cpu->target_cycle_on_idle = 0;
     cpu->target_cycle_on_instruction = 0;
-    cpu->touched_timer_during_last_quantum = 0;
 
     cpu->sgi_sender_time_ns_valid = false;
     cpu->sgi_sender_remaining_time_ns = 0;
@@ -288,7 +287,6 @@ continue_to_run:
                         &quantum_barrier,
                         cpu->quantum_generation,
                         &stop_request,
-                        cpu->touched_timer_during_last_quantum != 0
                     );
 
                     cpu->whether_spinning_on_quantum = false;
@@ -297,13 +295,11 @@ continue_to_run:
                         assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
                         cpu->quantum_generation += 1;
-                        cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
                         assert(new_generation == old_generation_low_32bit);
                         // clean the budget.
                         cpu->quantum_budget = 0;
-                        cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
                         assert(cpu->stop || cpu->stopped || !runstate_is_running());
                         // printf("[%s:%d] CPU %d quits due to the machine state change. stop_request: %d, stopped: %d \n", __FILE__, __LINE__, cpu->cpu_index, cpu->stop, cpu->stopped);
@@ -351,8 +347,7 @@ continue_to_run:
                     uint32_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier,
                         cpu->quantum_generation,
-                        &stop_request,
-                        cpu->touched_timer_during_last_quantum != 0
+                        &stop_request
                     );
 
                     cpu->whether_spinning_on_quantum = false;
@@ -361,13 +356,11 @@ continue_to_run:
                         assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
                         cpu->quantum_generation += 1;
-                        cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
                         assert(new_generation == old_generation_low_32bit);
                         // clean the budget.
                         cpu->quantum_budget = 0;
-                        cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
                         assert(cpu->stop || cpu->stopped || !runstate_is_running());
                     }
@@ -405,8 +398,7 @@ continue_to_run:
                 uint32_t new_generation = dynamic_barrier_polling_wait(
                     &quantum_barrier,
                     cpu->quantum_generation,
-                    &stop_request,
-                    cpu->touched_timer_during_last_quantum != 0
+                    &stop_request
                 );
 
                 cpu->whether_spinning_on_quantum = false;
@@ -427,13 +419,11 @@ continue_to_run:
 
                     cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
                     cpu->quantum_generation += 1;
-                    cpu->touched_timer_during_last_quantum = 0;
                 } else {
                     // this means the vCPU quits due to the machine state change.
                     assert(new_generation == old_generation_low_32bit);
                     // clean the budget.
                     cpu->quantum_budget = 0;
-                    cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                     cpu->quantum_budget_depleted = 1;
                     assert(cpu->stop || cpu->stopped || !runstate_is_running());
                     // printf("[%s:%d] CPU %d quits due to the machine state change. stop_request: %d, stopped: %d \n", __FILE__, __LINE__, cpu->cpu_index, cpu->stop, cpu->stopped);

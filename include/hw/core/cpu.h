@@ -445,10 +445,10 @@ struct CPUState {
     GArray *iommu_notifiers;
 
     /* State for the time calculation */
-    uint64_t unknown_time; // whether this core does not have its time accurately reflected by its instruction. 
+    uint64_t unknown_time; // whether this core does not have its time accurately reflected by its instruction.
     uint64_t enter_idle_time; // number of  times when this core enters the idle mode
     uint64_t target_cycle_on_idle; // number of target cycles that are deduced due to the idle time.
-    uint64_t target_cycle_on_instruction; 
+    uint64_t target_cycle_on_instruction;
 
     // State for deduction of the quantum.
     uint64_t ip100ns; // instruction per 10 pico second . 0 means this core is not managed by the quantum.
@@ -456,8 +456,6 @@ struct CPUState {
     uint64_t quantum_generation;
     uint64_t quantum_required;
     int quantum_budget_depleted;
-
-    uint64_t touched_timer_during_last_quantum; // whether this core has touched the timer during the last quantum.
 
     // State to query the latest timer interrupt deadline.
     uint64_t (*cb_next_timer_interrupt_time)(CPUState *);
