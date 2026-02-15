@@ -235,6 +235,16 @@ bool is_waiting_for_quanta(PDESWWT *wwt_engine) {
 }
 
 int64_t time_test=0;
+
+
+
+int64_t get_quantum_time_universal(int64_t quantum_round){
+    return quantum_round * get_singleton_wwt_engine()->quantum_ns;
+}
+int64_t get_quantum_time_local(int64_t quantum_round){
+    return get_quantum_time_universal(quantum_round) + get_singleton_wwt_engine()->engine->first_sync_virtual_time;
+}
+
 void wwt_sync_check(){
     // Don't block but keep checking
 
@@ -265,6 +275,21 @@ void wwt_sync_check(){
         //     assert (current_time == time_test && "Current time should be equal to time_test at the start of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
         // }
 
+        // TODO make these quantum rounds into macros
+
+        // TODO add this for parallel mode:  this seems to be empty time passed with no instruction after quantum. the boundry is still kept, due to how timers are set but this needs to be addressed
+        bool monitor_virtual_time_drift = false;
+        if (monitor_virtual_time_drift){
+            if (wwt_engine->current_quantum_round > 4){
+                int64_t universal_time = get_universal_virtual_time(wwt_engine->engine);
+                int64_t expected_time = get_quantum_time_universal(wwt_engine->current_quantum_round - 1);
+                if (universal_time != expected_time) {
+                    printf("Current universal time %lu is not the same as expected quantum time %lu at round %lu, this should not happen\n", universal_time, expected_time, wwt_engine->current_quantum_round - 1);
+                }
+                assert(universal_time == expected_time && "Current universal time should be equal to the quantum time at the end of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
+            }
+        }
+        
         // Compute the next time for quantum
         int64_t next_quantum_time = wwt_engine->current_quantum_round * wwt_engine->quantum_ns;
         // Transform it to local time

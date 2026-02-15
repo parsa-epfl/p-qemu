@@ -211,14 +211,19 @@ void process_message(PDESEngine *engine, Message *msg) {
         printf("PDES Engine received checkpoint initiation message, initiating checkpoint.\n");
         engine->init_flag++;
         // TODO expand this into multiple nodes
-        if (engine->init_flag == 1 && engine->master){
-            if (engine->master_init){
+        if (engine->master){
+            printf("This is a master, checking if we can initiate checkpoint immediately or need to wait for next initiation message.\n");
+            if (engine->init_flag == 1 && engine->master_init){
                 // if master is ready to initiate checkpoint start it
                 printf("Master is already initialized, initiating checkpoint immediately.\n");
                 QEMUBH *bh = qemu_bh_new(initiate_checkpoint_master, NULL);
                 engine->checkpoint_bh = bh;
                 qemu_bh_schedule(bh);
+            }else{
+                printf("Master received checkpoint initiation message, but master init flag is not set, marking master as ready and waiting for next checkpoint initiation message.\n");
             }
+        }else{
+            printf("Not a master, just returning after receiving checkpoint initiation message.\n");
         }
     }
 }
