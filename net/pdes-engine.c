@@ -7,6 +7,7 @@
 #include "include/sysemu/runstate.h"
 #include "net/pdes-checkpoint.h"
 #include "migration/snapshot.h"
+#include "sysemu/cpu-timers.h"
 
 // TODO this should be generlized to multiple neighbours later
 // For now singleton pdes engine
@@ -39,6 +40,7 @@ PDESEngine *pdes_engine_create(
 ) {
     // Show error if singleton was created before
     assert(singleton_engine == NULL && "Singleton engine already created");
+    icount_set_sleep(false);
     PDESEngine *engine = g_new0(PDESEngine, 1);
     engine->comm = pdes_comm_create(shm_send, shm_recv);
     engine->needs_sync = sync;
@@ -391,5 +393,7 @@ void finish_initiate_checkpoint(PDESEngine *engine){
     }else{
         int res = send_initiate_checkpoint_message(engine);
         assert (res == 0 && "Failed to send checkpoint initiation message to master");
+        vm_start();
+        printf("Sent checkpoint initiation message to master, returning.\n");
     }
 }

@@ -181,7 +181,7 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         }
         assert (valid_round && "Received sync message for wrong quantum round, this should not happen");
         sync_count_increment(wwt_engine->sync_counts, msg_round);
-        // printf("WWT: Sync received for round %lu (count now %d)\n", msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
+        printf("WWT: Sync received for round %lu (count now %d)\n", msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
 
     } else if (msg->type == MSG_TYPE_NORMAL){
         // Normal message, pass to final callback
@@ -270,7 +270,7 @@ void wwt_sync_check(){
         // Transform it to local time
         int64_t next_quantum_time_local = next_quantum_time + wwt_engine->engine->first_sync_virtual_time;
         timer_mod(wwt_engine->quantum_timer, next_quantum_time_local);
-        // printf("===================WWT: Finished quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round - 1, current_time, get_universal_virtual_time(wwt_engine->engine));
+        printf("===================WWT: Finished quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round - 1, current_time, get_universal_virtual_time(wwt_engine->engine));
     }
 }
 
@@ -279,19 +279,31 @@ void quanta_sync(PDESWWT *wwt_engine){
     // printf("WWT: Starting quantum sync at universal virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
     wwt_engine->finished_quantum = true;
     send_sync(wwt_engine);
+    printf("WWT: Sent sync for quantum %lu at virtual time %lu ns and universal time %lu ns.\n", wwt_engine->current_quantum_round, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), get_universal_virtual_time(wwt_engine->engine));
 
     // same using is_waiting_for_quanta as setup, as its the same logic
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     time_test = current_time;
-    if (wwt_engine->current_quantum_round > 2){
+    if (wwt_engine->current_quantum_round > 1){
         int64_t expected_time = (wwt_engine->current_quantum_round ) * wwt_engine->quantum_ns;
         int64_t universal_time = get_universal_virtual_time(wwt_engine->engine);
-        if (expected_time != universal_time) {
-            printf("Current time %lu is less than expected time %lu at round %lu, this should not happen\n", universal_time, expected_time, wwt_engine->current_quantum_round);
+
+
+        if (wwt_engine->current_quantum_round==1){
+            // There might be a time difference due to the internal qemu clock skipping a constant amount
+            int64_t time_diff = universal_time - expected_time;
+            printf("WWT: Time difference between universal time and expected time for quantum %lu is %ld ns.\n", wwt_engine->current_quantum_round, time_diff);
+            // add this to the variable we have for bias : first_sync_virtual_time
+            // TODO revisit this logic and verify it
+            wwt_engine->engine->first_sync_virtual_time -= time_diff;
+        }else{
+            if (expected_time != universal_time) {
+                printf("Current time %lu is not the same as expected time %lu at round %lu, this should not happen\n", universal_time, expected_time, wwt_engine->current_quantum_round);
+            }
+            assert (universal_time == expected_time && "Current time should be greater than or equal to expected time at the start of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
         }
-        assert (universal_time == expected_time && "Current time should be greater than or equal to expected time at the start of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
     }
-    // printf("===================WWT: going to pause for quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round, current_time, get_universal_virtual_time(wwt_engine->engine));
+    printf("===================WWT: going to pause for quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round, current_time, get_universal_virtual_time(wwt_engine->engine));
     pdes_pause(wwt_engine->engine);
 
 
