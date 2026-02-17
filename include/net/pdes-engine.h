@@ -65,6 +65,9 @@ struct PDESEngine {
 
     // V2 timer impl
     QEMUBH *pause_bh;
+    bool needs_to_checkpoint;
+    char checkpoint_name[10006];
+    SnapshotFormat checkpoint_format;
 };
 
 PDESEngine *pdes_engine_create(

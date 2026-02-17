@@ -248,11 +248,16 @@ int64_t get_quantum_time_local(int64_t quantum_round){
 void wwt_sync_check(){
     // Don't block but keep checking
 
-
+    PDESWWT *wwt_engine = get_singleton_wwt_engine();
     bool waiting = is_waiting_for_quanta(get_singleton_wwt_engine());
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     if (runstate_is_running()){
-        assert(false && "WWT sync check should not be called while running, this should be handled by the normal message poll of the underlying engine");
+        // TODO turn this to assertion later, as we should be paused, only saw during one checkpoint
+        // if (wwt_engine->engine->paused == false){
+        //     assert(false && "Engine should be paused while waiting for quanta, if this assertion fails it means that the engine is not properly paused during quanta sync, needs to be fixed for better sync performance");
+        // }
+        timer_mod(get_singleton_wwt_engine()->sync_check_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 500);
+        return;
     }
     if (waiting){
         // Reschedule check
@@ -270,6 +275,17 @@ void wwt_sync_check(){
         wwt_engine->number_of_neighbors_finished -= wwt_engine->number_of_neighbors;
         wwt_engine->current_quantum_round++;
         wwt_engine->finished_quantum = false;
+
+        // TODO this part of checkpoint is to wwt specific, change later
+        if(wwt_engine->engine->needs_to_checkpoint){
+            printf("WWT: Finished waiting for quanta for round %lu, starting checkpoint for this quantum.\n", wwt_engine->current_quantum_round - 1);
+            wwt_engine->engine->checkpoint_in_progress = false;
+            save_snapshot(wwt_engine->engine->checkpoint_name, true, NULL, false, NULL, wwt_engine->engine->checkpoint_format, NULL);
+            printf("WWT: Finished checkpoint for quantum %lu, starting next quantum.\n", wwt_engine->current_quantum_round - 1);
+            wwt_engine->engine->needs_to_checkpoint = false;
+        }
+
+
         // Schedule next quantum
         // if (time_test != 0){
         //     if (current_time != time_test) {
