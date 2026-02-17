@@ -66,8 +66,11 @@ struct PDESEngine {
     // V2 timer impl
     QEMUBH *pause_bh;
     bool needs_to_checkpoint;
+    bool notified_neighbors;
     char checkpoint_name[10006];
     SnapshotFormat checkpoint_format;
+    // TODO this is specific to wwt, needs to be fixed
+    uint64_t checkpoint_quantum_round;
 };
 
 PDESEngine *pdes_engine_create(

@@ -67,6 +67,7 @@ PDESEngine *pdes_engine_create(
     engine->master_init = false;
     engine->pause_bh = NULL;
     engine->needs_to_checkpoint = false;
+    engine->notified_neighbors = false;
 
 
 
@@ -160,7 +161,14 @@ void process_message(PDESEngine *engine, Message *msg) {
             SnapshotFormat format;
             memcpy(&format, msg->data + name_len, sizeof(SnapshotFormat));
 
+            // read quantum round too, for later use if needed
+            uint64_t quantum_round = 0;
+            if (msg->len >= sizeof(SnapshotFormat) + sizeof(uint64_t)) {
+                memcpy(&quantum_round, msg->data + name_len + sizeof(SnapshotFormat),sizeof(uint64_t));
+            }
+
             engine->checkpoint_format = format;
+            engine->checkpoint_quantum_round = quantum_round;
 
 
 
@@ -185,9 +193,15 @@ void process_message(PDESEngine *engine, Message *msg) {
             if (engine->init_flag == 1 && engine->master_init){
                 // if master is ready to initiate checkpoint start it
                 printf("Master is already initialized, initiating checkpoint immediately.\n");
-                QEMUBH *bh = qemu_bh_new(initiate_checkpoint_master, NULL);
-                engine->checkpoint_bh = bh;
-                qemu_bh_schedule(bh);
+                engine->needs_to_checkpoint = true;
+                engine->checkpoint_format = SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE;
+                char* snapshot_name = "init_warmed"; 
+                snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", snapshot_name);
+                if (!engine->notified_neighbors){
+                    notify_neighbors_for_drain(engine, snapshot_name, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
+                    engine->notified_neighbors = true;
+                }
+                printf("Master sent drain start message for checkpoint initiation to neighbors, waiting for neighbors to drain and checkpoint.\n");
             }else{
                 printf("Master received checkpoint initiation message, but master init flag is not set, marking master as ready and waiting for next checkpoint initiation message.\n");
             }
@@ -283,6 +297,36 @@ void pdes_play(void *opaque){
     return;
 }
 
+int notify_neighbors_for_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format){
+    uint8_t snapshot_name_data[1006];
+    int n = snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data),
+                    "QPDES%s", snapshot_name ? snapshot_name : "");
+    if (n < 0) {
+        // encoding/format error
+        return -1;
+    }
+
+    if (n >= sizeof(snapshot_name_data)) {
+        // Output was truncated, handle the error
+        fprintf(stderr, "Snapshot name is too long and was truncated\n");
+        return -1;
+    }
+    snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data), "QPDES%s", snapshot_name);
+    // Validate this formatting of string, for both send and receive
+    memcpy(snapshot_name_data + n, &format, sizeof(SnapshotFormat));
+    size_t total_len = (size_t)n + sizeof(SnapshotFormat);
+
+    // Add in quantum round too:
+    // TODO this is specific to wwt, need to generalize
+    uint64_t quantum_round = get_singleton_wwt_engine()->current_quantum_round;
+    memcpy(snapshot_name_data + total_len, &quantum_round, sizeof(quantum_round));
+    total_len += sizeof(quantum_round);
+
+    Message drain_start_msg = create_message(snapshot_name_data, total_len, DRAIN_START, get_universal_virtual_time(engine));
+    pdes_comm_send(engine->comm, &drain_start_msg);
+    printf("created drain start message with snapshot name: %s with size %zu and sent it\n", snapshot_name_data, (size_t)n);
+}
+
 int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) {
     
     if (engine->master){
@@ -291,29 +335,10 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) 
     
 
         // Create PDES start message for everyone lese
-        uint8_t snapshot_name_data[1006];
-        int n = snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data),
-                        "QPDES%s", snapshot_name ? snapshot_name : "");
-        if (n < 0) {
-            // encoding/format error
-            return -1;
+        if (!engine->notified_neighbors){
+            notify_neighbors_for_drain(engine, snapshot_name, format);
+            engine->notified_neighbors = true;
         }
-
-        if (n >= sizeof(snapshot_name_data)) {
-            // Output was truncated, handle the error
-            fprintf(stderr, "Snapshot name is too long and was truncated\n");
-            return -1;
-        }
-        snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data), "QPDES%s", snapshot_name);
-        // Validate this formatting of string, for both send and receive
-        memcpy(snapshot_name_data + n, &format, sizeof(SnapshotFormat));
-        size_t total_len = (size_t)n + sizeof(SnapshotFormat);
-
-        Message drain_start_msg = create_message(snapshot_name_data, total_len, DRAIN_START, get_universal_virtual_time(engine));
-        pdes_comm_send(engine->comm, &drain_start_msg);
-        printf("created drain start message with snapshot name: %s with size %zu and sent it\n", snapshot_name_data, (size_t)n);
-
-
 
         
         Message drain_end_msg = create_message(NULL, 0, DRAIN_END, get_universal_virtual_time(engine));
@@ -340,8 +365,8 @@ int send_initiate_checkpoint_message(PDESEngine *engine){
 
 void finish_initiate_checkpoint(PDESEngine *engine){
     printf("========================GOT signal for initiate_checkpoint========================\n");
-    printf("Skipping init warm");
-    return;
+    // printf("+++++++++++++ Skipping checkpoint initiation because this is not implemented yet, just returning. +++++++++++++\n");
+    // return;
     if (engine->master){
         // This is master, we can start checkpoint immediately
         // TODO expand this to multiple nodes
@@ -351,10 +376,17 @@ void finish_initiate_checkpoint(PDESEngine *engine){
             printf("Master received checkpoint initiation message, initiating checkpoint immediately.\n");
             // pdes_drain(engine, "init_warmed", SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
 
-            // TODO remove this repetition
-            QEMUBH *bh = qemu_bh_new(initiate_checkpoint_master, NULL);
-            engine->checkpoint_bh = bh;
-            qemu_bh_schedule(bh);
+            // Make sure neighbors know they can checkpoint at end of quantum
+            // and set flags for our selves as well
+            engine->needs_to_checkpoint = true;
+            engine->checkpoint_format = SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE;
+            char* snapshot_name = "init_warmed"; 
+            snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", snapshot_name);
+            if (!engine->notified_neighbors){
+                notify_neighbors_for_drain(engine, snapshot_name, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
+                engine->notified_neighbors = true;
+            }
+            printf("Master sent drain start message for checkpoint initiation to neighbors, waiting for neighbors to drain and checkpoint.\n");
         }else{
             printf("Master received checkpoint initiation message, but init flag is not set, marking master as ready and waiting for next checkpoint initiation message.\n");
             return;
@@ -362,7 +394,6 @@ void finish_initiate_checkpoint(PDESEngine *engine){
     }else{
         int res = send_initiate_checkpoint_message(engine);
         assert (res == 0 && "Failed to send checkpoint initiation message to master");
-        vm_start();
         printf("Sent checkpoint initiation message to master, returning.\n");
     }
 }
