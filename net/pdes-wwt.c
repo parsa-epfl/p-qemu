@@ -181,7 +181,7 @@ void wwt_recivied_callback(void *opaque, Message *msg){
         }
         assert (valid_round && "Received sync message for wrong quantum round, this should not happen");
         sync_count_increment(wwt_engine->sync_counts, msg_round);
-        printf("WWT: Sync received for round %lu (count now %d)\n", msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
+        // printf("WWT: Sync received for round %lu (count now %d)\n", msg_round, sync_count_get(wwt_engine->sync_counts, msg_round));
 
     } else if (msg->type == MSG_TYPE_NORMAL){
         // Normal message, pass to final callback
@@ -251,17 +251,20 @@ void wwt_sync_check(){
 
     bool waiting = is_waiting_for_quanta(get_singleton_wwt_engine());
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    if (runstate_is_running()){
+        assert(false && "WWT sync check should not be called while running, this should be handled by the normal message poll of the underlying engine");
+    }
     if (waiting){
         // Reschedule check
         timer_mod(get_singleton_wwt_engine()->sync_check_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 500);
+        return;
     } else {
         // Finished waiting, can delete timer
         // get engine
         PDESWWT *wwt_engine = get_singleton_wwt_engine();
         timer_free(wwt_engine->sync_check_timer);
         wwt_engine->sync_check_timer = NULL;
-        // call play to resume
-        pdes_play(wwt_engine->engine);
+        
 
         // TODO number_of_neighbors_finished should be deprecated
         wwt_engine->number_of_neighbors_finished -= wwt_engine->number_of_neighbors;
@@ -278,7 +281,7 @@ void wwt_sync_check(){
         // TODO make these quantum rounds into macros
 
         // TODO add this for parallel mode:  this seems to be empty time passed with no instruction after quantum. the boundry is still kept, due to how timers are set but this needs to be addressed
-        bool monitor_virtual_time_drift = false;
+        bool monitor_virtual_time_drift = true;
         if (monitor_virtual_time_drift){
             if (wwt_engine->current_quantum_round > 4){
                 int64_t universal_time = get_universal_virtual_time(wwt_engine->engine);
@@ -295,6 +298,8 @@ void wwt_sync_check(){
         // Transform it to local time
         int64_t next_quantum_time_local = next_quantum_time + wwt_engine->engine->first_sync_virtual_time;
         timer_mod(wwt_engine->quantum_timer, next_quantum_time_local);
+        // call play to resume
+        pdes_play(wwt_engine->engine);
         printf("===================WWT: Finished quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round - 1, current_time, get_universal_virtual_time(wwt_engine->engine));
     }
 }

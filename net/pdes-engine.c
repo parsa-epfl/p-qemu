@@ -8,6 +8,7 @@
 #include "net/pdes-checkpoint.h"
 #include "migration/snapshot.h"
 #include "sysemu/cpu-timers.h"
+#include "hw/core/cpu.h"
 
 // TODO this should be generlized to multiple neighbours later
 // For now singleton pdes engine
@@ -266,6 +267,8 @@ void pdes_pause_bh(void *opaque){
 
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
+    assert(current_cpu != NULL);
+
     engine->paused = true;
     // Create bh
     // Make sure bh is empty
@@ -279,6 +282,20 @@ void pdes_pause(void *opaque){
     assert(engine->pause_bh == NULL);
     engine->pause_bh = qemu_bh_new(pdes_pause_bh, engine);
     qemu_bh_schedule(engine->pause_bh);
+
+
+    
+
+    if (current_cpu == NULL){
+        // This can happen if we call pause before the CPU is created, in that case we just return and do nothing as there is nothing to pause yet
+        printf("pdes_pause called but current_cpu is NULL, this can happen if pause is called before CPU is created, just returning without pausing.\n");
+        return;
+    }
+    
+
+    current_cpu->stop = true;
+    cpu_exit(current_cpu);
+
 
 
     return;
@@ -378,6 +395,8 @@ int send_initiate_checkpoint_message(PDESEngine *engine){
 
 void finish_initiate_checkpoint(PDESEngine *engine){
     printf("========================GOT signal for initiate_checkpoint========================\n");
+    printf("Skipping init warm");
+    return;
     if (engine->master){
         // This is master, we can start checkpoint immediately
         // TODO expand this to multiple nodes
