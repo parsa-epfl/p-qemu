@@ -128,7 +128,24 @@ void initiate_checkpoint_master(void *context){
 
     return;
 }
-
+void set_checkpoint_values_for_master(){
+    // if master is ready to initiate checkpoint start it
+    PDESEngine *engine = get_singleton_engine();
+    printf("Master is already initialized, initiating checkpoint immediately.\n");
+    engine->needs_to_checkpoint = true;
+    engine->checkpoint_format = SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE;
+    // TODO this is specific to wwt, need to generalize later, maybe include this in the message
+    PDESWWT *wwt_engine = get_singleton_wwt_engine();
+    engine->checkpoint_quantum_round = wwt_engine->current_quantum_round; // this is specific to wwt, need to generalize later
+    char* snapshot_name = "init_warmed"; 
+    snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", snapshot_name);
+    if (!engine->notified_neighbors){
+        notify_neighbors_for_drain(engine, snapshot_name, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
+        engine->notified_neighbors = true;
+    }
+    printf("Setting checkpoint values for master, snapshot name: %s, format: %d, quantum round: %lu\n", engine->checkpoint_name, engine->checkpoint_format, engine->checkpoint_quantum_round);
+    // For now skipping 
+}
 void process_message(PDESEngine *engine, Message *msg) {
 
     // Make sure the message goes up the chain before doing anything else
@@ -154,7 +171,8 @@ void process_message(PDESEngine *engine, Message *msg) {
             engine->needs_to_checkpoint = true;
 
             // TODO verify new snapshot name formatting and parsing, for both send and receive
-            size_t name_len = msg->len - sizeof(SnapshotFormat);
+            // TODO just turn this into a struct message
+            size_t name_len = msg->len - sizeof(SnapshotFormat) - sizeof(uint64_t);
             memcpy(engine->checkpoint_name, msg->data, name_len);
             engine->checkpoint_name[name_len] = '\0'; // null-terminate if needed
 
@@ -169,6 +187,8 @@ void process_message(PDESEngine *engine, Message *msg) {
 
             engine->checkpoint_format = format;
             engine->checkpoint_quantum_round = quantum_round;
+
+            printf("Parsed checkpoint initiation message, snapshot name: %s, format: %d, quantum round: %lu\n", engine->checkpoint_name, format, quantum_round);
 
 
 
@@ -191,17 +211,7 @@ void process_message(PDESEngine *engine, Message *msg) {
         if (engine->master){
             printf("This is a master, checking if we can initiate checkpoint immediately or need to wait for next initiation message.\n");
             if (engine->init_flag == 1 && engine->master_init){
-                // if master is ready to initiate checkpoint start it
-                printf("Master is already initialized, initiating checkpoint immediately.\n");
-                engine->needs_to_checkpoint = true;
-                engine->checkpoint_format = SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE;
-                char* snapshot_name = "init_warmed"; 
-                snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", snapshot_name);
-                if (!engine->notified_neighbors){
-                    notify_neighbors_for_drain(engine, snapshot_name, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
-                    engine->notified_neighbors = true;
-                }
-                printf("Master sent drain start message for checkpoint initiation to neighbors, waiting for neighbors to drain and checkpoint.\n");
+                set_checkpoint_values_for_master();
             }else{
                 printf("Master received checkpoint initiation message, but master init flag is not set, marking master as ready and waiting for next checkpoint initiation message.\n");
             }
@@ -378,14 +388,7 @@ void finish_initiate_checkpoint(PDESEngine *engine){
 
             // Make sure neighbors know they can checkpoint at end of quantum
             // and set flags for our selves as well
-            engine->needs_to_checkpoint = true;
-            engine->checkpoint_format = SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE;
-            char* snapshot_name = "init_warmed"; 
-            snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", snapshot_name);
-            if (!engine->notified_neighbors){
-                notify_neighbors_for_drain(engine, snapshot_name, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
-                engine->notified_neighbors = true;
-            }
+            set_checkpoint_values_for_master();
             printf("Master sent drain start message for checkpoint initiation to neighbors, waiting for neighbors to drain and checkpoint.\n");
         }else{
             printf("Master received checkpoint initiation message, but init flag is not set, marking master as ready and waiting for next checkpoint initiation message.\n");
