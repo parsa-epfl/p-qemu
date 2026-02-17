@@ -66,6 +66,7 @@ PDESEngine *pdes_engine_create(
     engine->init_flag = 0;
     engine->master_init = false;
     engine->pause_bh = NULL;
+    engine->needs_to_checkpoint = false;
 
 
 
