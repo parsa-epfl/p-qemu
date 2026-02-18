@@ -259,7 +259,7 @@ void pdes_pause_bh(void *opaque){
 
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
-    assert(current_cpu != NULL);
+    
 
     engine->paused = true;
     // Create bh
@@ -280,7 +280,7 @@ void pdes_pause(void *opaque){
 
     if (current_cpu == NULL){
         // This can happen if we call pause before the CPU is created, in that case we just return and do nothing as there is nothing to pause yet
-        printf("pdes_pause called but current_cpu is NULL, this can happen if pause is called before CPU is created, just returning without pausing.\n");
+        // printf("pdes_pause called but current_cpu is NULL, this can happen if pause is called before CPU is created, just returning without pausing.\n");
         return;
     }
     
@@ -334,7 +334,8 @@ int notify_neighbors_for_drain(PDESEngine *engine, char * snapshot_name, Snapsho
 
     Message drain_start_msg = create_message(snapshot_name_data, total_len, DRAIN_START, get_universal_virtual_time(engine));
     pdes_comm_send(engine->comm, &drain_start_msg);
-    printf("created drain start message with snapshot name: %s with size %zu and sent it\n", snapshot_name_data, (size_t)n);
+    printf("notified neighbours with drain start message with snapshot name: %s with size %zu and sent it\n", snapshot_name_data, (size_t)n);
+    engine->notified_neighbors = false;
 }
 
 int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) {
