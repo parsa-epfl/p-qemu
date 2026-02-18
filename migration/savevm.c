@@ -2999,7 +2999,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             PDESWWT *wwt = get_singleton_wwt_engine();
             engine->checkpoint_quantum_round = wwt->current_quantum_round;
             engine->notified_neighbors=false;
-
+            return;
         }
     }
 

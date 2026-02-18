@@ -139,10 +139,6 @@ void set_checkpoint_values_for_master(){
     engine->checkpoint_quantum_round = wwt_engine->current_quantum_round; // this is specific to wwt, need to generalize later
     char* snapshot_name = "init_warmed"; 
     snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", snapshot_name);
-    if (!engine->notified_neighbors){
-        notify_neighbors_for_drain(engine, snapshot_name, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE);
-        engine->notified_neighbors = true;
-    }
     printf("Setting checkpoint values for master, snapshot name: %s, format: %d, quantum round: %lu\n", engine->checkpoint_name, engine->checkpoint_format, engine->checkpoint_quantum_round);
     // For now skipping 
 }
@@ -240,12 +236,14 @@ void pdes_engine_poll(void *opaque) {
         }
     }
     // TODO add a flag so that when calling this manually we don't reschedule again and again
-    schedule_poll(engine);
+    // schedule_poll(engine);
 }
 
 void schedule_poll(void *opaque){
+    // getting rid of poll here
+    printf("!!!!!!!!!!! should not be called TODO be removed !!!!!!!!!!!\n");
     PDESEngine *engine = opaque;
-    timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+50000); // 5 microseconds
+    timer_mod(engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+5000000);
 }
 
 void pdes_pause_bh(void *opaque){
@@ -307,36 +305,6 @@ void pdes_play(void *opaque){
     return;
 }
 
-int notify_neighbors_for_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format){
-    uint8_t snapshot_name_data[1006];
-    int n = snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data),
-                    "QPDES%s", snapshot_name ? snapshot_name : "");
-    if (n < 0) {
-        // encoding/format error
-        return -1;
-    }
-
-    if (n >= sizeof(snapshot_name_data)) {
-        // Output was truncated, handle the error
-        fprintf(stderr, "Snapshot name is too long and was truncated\n");
-        return -1;
-    }
-    snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data), "QPDES%s", snapshot_name);
-    // Validate this formatting of string, for both send and receive
-    memcpy(snapshot_name_data + n, &format, sizeof(SnapshotFormat));
-    size_t total_len = (size_t)n + sizeof(SnapshotFormat);
-
-    // Add in quantum round too:
-    // TODO this is specific to wwt, need to generalize
-    uint64_t quantum_round = get_singleton_wwt_engine()->current_quantum_round;
-    memcpy(snapshot_name_data + total_len, &quantum_round, sizeof(quantum_round));
-    total_len += sizeof(quantum_round);
-
-    Message drain_start_msg = create_message(snapshot_name_data, total_len, DRAIN_START, get_universal_virtual_time(engine));
-    pdes_comm_send(engine->comm, &drain_start_msg);
-    printf("notified neighbours with drain start message with snapshot name: %s with size %zu and sent it\n", snapshot_name_data, (size_t)n);
-    engine->notified_neighbors = false;
-}
 
 int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) {
     
@@ -345,11 +313,6 @@ int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) 
    
     
 
-        // Create PDES start message for everyone lese
-        if (!engine->notified_neighbors){
-            notify_neighbors_for_drain(engine, snapshot_name, format);
-            engine->notified_neighbors = true;
-        }
 
         
         Message drain_end_msg = create_message(NULL, 0, DRAIN_END, get_universal_virtual_time(engine));
