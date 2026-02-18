@@ -129,6 +129,7 @@ struct PDESWWT{
     // Timer to check sync status without blocking
     QEMUTimer *sync_check_timer;
     bool finished_quantum;
+    QEMUBH *boundry_checkpoint_bh;
 
     
 };

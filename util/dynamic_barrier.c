@@ -211,9 +211,10 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
                     qemu_notify_event();
 
                     // wait for the machine state to become suspended for VM.
-                    while (current_cpu->stop != true) {
-                        sched_yield();
-                    }
+                    // TODO check if we need to still do this in single node (+ checkpointing on single node in general)
+                    // while (current_cpu->stop != true) {
+                    //     sched_yield();
+                    // }
                 }
             }
             barrier->next_check_threshold += quantum_check_threshold;
