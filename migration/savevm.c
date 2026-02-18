@@ -2986,6 +2986,22 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
 {
     printf("save_snapshot called with name=%s format=%d with number of inflight messages %d and format %d\n", name, format, pdes_inflight_count(), format);
     PDESEngine *engine = get_singleton_engine();
+    // TODO Need a cleaner way to force all savevms to go to boundry
+    if (engine!= NULL){
+        if (!engine->needs_to_checkpoint){
+            engine->needs_to_checkpoint = true;
+            // Copy the name
+            snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", name ? name : "snapshot");
+            // Copy the format
+            engine->checkpoint_format = format;
+            engine->notified_neighbors = false;
+            // WWT specific
+            PDESWWT *wwt = get_singleton_wwt_engine();
+            engine->checkpoint_quantum_round = wwt->current_quantum_round;
+            engine->notified_neighbors=false;
+
+        }
+    }
 
     bool validate = validate_checkpoint(&name);
     if (!validate){
@@ -3088,6 +3104,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         pstrcpy(sn->name, sizeof(sn->name), autoname);
     }
 
+    printf("=============================== savevm log 1 ===============================\n");
     switch (format) {
         case SNAPSHOT_FORMAT_INTERNAL_RAW: {
             f = qemu_fopen_bdrv(bs, 1);
@@ -3120,6 +3137,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
 
     }
 
+    printf("=============================== savevm log 2 ===============================\n");
     /* save the VM state */
     if (!f) {
         error_setg(errp, "Could not open VM state file");
@@ -3134,6 +3152,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         dirty_bitmap = memory_region_snapshot_and_clear_dirty(get_main_memory()->mr, 0, get_main_memory()->used_length, DIRTY_MEMORY_MIGRATION);
     }
 
+    printf("=============================== savevm log 3 ===============================\n");
     ret = qemu_savevm_state(f, errp);
     vm_state_size = qemu_file_transferred_noflush(f);
     ret2 = qemu_fclose(f);
@@ -3150,6 +3169,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         goto the_end;
     }
 
+    printf("=============================== savevm log 4 ===============================\n");
     if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE || format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
         struct RAMBlock *main_ram = get_main_memory();
         if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE) {
@@ -3272,6 +3292,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         }
     }
 
+    printf("=============================== savevm log 5 ===============================\n");
     if (pf_savevm_cb) {
         pf_savevm_cb(sn->name);
     }
@@ -3293,6 +3314,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
 
     ret = 0;
 
+    printf("=============================== savevm log 6 ===============================\n");
  the_end:
     if (aio_context) {
         aio_context_release(aio_context);
@@ -3303,6 +3325,8 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     if (saved_vm_running) {
         vm_start();
     }
+    
+    printf("=============================== savevm log 7 ===============================\n");
     return ret == 0;
 }
 

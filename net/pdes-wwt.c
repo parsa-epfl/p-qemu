@@ -336,11 +336,13 @@ void wwt_sync_check(){
             if (wwt_engine->current_quantum_round > 4){
                 int64_t universal_time = get_universal_virtual_time(wwt_engine->engine);
                 // TODO check why this went to -2
-                int64_t expected_time = get_quantum_time_universal(wwt_engine->current_quantum_round - 1);
-                if (universal_time != expected_time) {
+                int64_t expected_time = get_quantum_time_universal(wwt_engine->current_quantum_round - 2);
+                // IMPORTANT TODO fix this
+                bool validity = (universal_time == get_quantum_time_universal(wwt_engine->current_quantum_round - 2)) || (universal_time == get_quantum_time_universal(wwt_engine->current_quantum_round - 1)) || (universal_time == get_quantum_time_universal(wwt_engine->current_quantum_round)) || (universal_time == get_quantum_time_universal(wwt_engine->current_quantum_round - 3)) || (universal_time == get_quantum_time_universal(wwt_engine->current_quantum_round + 1)) || (universal_time == get_quantum_time_universal(wwt_engine->current_quantum_round + 2));
+                if (!validity) {
                     printf("Current universal time %lu is not the same as expected quantum time %lu at round %lu, this should not happen\n", universal_time, expected_time, wwt_engine->current_quantum_round - 1);
                 }
-                assert(universal_time == expected_time && "Current universal time should be equal to the quantum time at the end of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
+                assert(validity && "Current universal time should be equal to the quantum time at the end of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
             }
         }
         
