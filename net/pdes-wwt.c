@@ -251,6 +251,14 @@ int64_t get_quantum_time_local(int64_t quantum_round){
 
 
 int notify_neighbors_for_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format){
+    if(!engine->needs_to_checkpoint){
+        assert(false && "Should not be notifying neighbors for drain if we don't need to checkpoint");
+    }
+    if (engine->notified_neighbors){
+        return 0;
+    }
+    engine->notified_neighbors = true;
+    printf("Notifying neighbors for drain with snapshot name: %s and format: %d\n", snapshot_name, format);
     uint8_t snapshot_name_data[1006];
     int n = snprintf((char *)snapshot_name_data, sizeof(snapshot_name_data),
                     "QPDES%s", snapshot_name ? snapshot_name : "");
@@ -320,6 +328,7 @@ void wwt_sync_check(){
         // TODO this part of checkpoint is to wwt specific, change later
         // TODO Add race condition lock so double checkpoint never happens (reason we double check needs_to_checkpoint)
         if(wwt_engine->engine->needs_to_checkpoint){
+            notify_neighbors_for_drain(wwt_engine->engine, wwt_engine->engine->checkpoint_name, wwt_engine->engine->checkpoint_format);
 
             // Create bh and reschedule this again
             if ((wwt_engine->current_quantum_round < wwt_engine->engine->checkpoint_quantum_round) && wwt_engine->should_sync){
@@ -429,14 +438,13 @@ void quanta_sync(PDESWWT *wwt_engine){
     pdes_pause(wwt_engine->engine);
 
     // TODO DOCUMENT THIS MORE: for any operation between nodes that can have potential race conditions, it should be done after pause (to prevent race in node) but before send synnc (to prevent race in the other node)
-
+    // TODO add a lock to engine and everything that needs it. notify neighbor is a good example
+    pdes_engine_poll(wwt_engine->engine);
 
     if(wwt_engine->engine->needs_to_checkpoint){
-        if (!wwt_engine->engine->notified_neighbors){
-            wwt_engine->engine->notified_neighbors = true;
-            notify_neighbors_for_drain(wwt_engine->engine, wwt_engine->engine->checkpoint_name, wwt_engine->engine->checkpoint_format);
-        }
+        notify_neighbors_for_drain(wwt_engine->engine, wwt_engine->engine->checkpoint_name, wwt_engine->engine->checkpoint_format);
     }
+
 
     if(wwt_engine->should_sync){
         // Else you'd fill up buffer

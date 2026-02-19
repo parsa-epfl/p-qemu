@@ -132,6 +132,8 @@ void set_checkpoint_values_for_master(){
     // if master is ready to initiate checkpoint start it
     PDESEngine *engine = get_singleton_engine();
     printf("Master is already initialized, initiating checkpoint immediately.\n");
+    // TODO Make this repeated part into a function
+    engine->notified_neighbors = false;
     engine->needs_to_checkpoint = true;
     engine->checkpoint_format = SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE;
     // TODO this is specific to wwt, need to generalize later, maybe include this in the message
