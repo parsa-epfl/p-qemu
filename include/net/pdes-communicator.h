@@ -32,6 +32,5 @@ void pdes_comm_destroy(PDESCommunicator *comm);
 Message create_message(const uint8_t *data, size_t len, uint8_t type, uint64_t ts_ns);
 int pdes_comm_send(PDESCommunicator *comm, Message *msg);
 int pdes_comm_recv(PDESCommunicator *comm, Message *msg);
-void create_checkpoint_bh(bool exit_after);
 
 #endif
