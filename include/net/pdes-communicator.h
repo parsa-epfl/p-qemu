@@ -12,11 +12,11 @@ typedef struct PDESCommunicator PDESCommunicator;
 #define MSG_TYPE_NORMAL 0
 #define MSG_TYPE_SYNC 1
 #define NO_MESSAGE -1
-#define END_OF_EMULATION -2
 // TODO drain start is not used currently, but may be useful in future extensions, need to send it as well
 #define DRAIN_START 3
 #define DRAIN_END 4
 #define CHECKPOINT_INIT_STEP 5
+#define END_OF_EMULATION 6
 
 typedef struct {
     uint64_t ts_ns;       /* timestamp in nanoseconds */
@@ -32,5 +32,6 @@ void pdes_comm_destroy(PDESCommunicator *comm);
 Message create_message(const uint8_t *data, size_t len, uint8_t type, uint64_t ts_ns);
 int pdes_comm_send(PDESCommunicator *comm, Message *msg);
 int pdes_comm_recv(PDESCommunicator *comm, Message *msg);
+void create_checkpoint_bh(bool exit_after);
 
 #endif

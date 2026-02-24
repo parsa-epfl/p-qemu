@@ -64,6 +64,7 @@ struct PDESEngine {
     bool master_init;
 
     // V2 timer impl
+    // TODO all these bools need a lock
     QEMUBH *pause_bh;
     bool needs_to_checkpoint;
     bool notified_neighbors;
@@ -71,6 +72,10 @@ struct PDESEngine {
     SnapshotFormat checkpoint_format;
     // TODO this is specific to wwt, needs to be fixed
     uint64_t checkpoint_quantum_round;
+    QEMUBH *boundry_checkpoint_bh;
+
+    // exit changes
+    bool notified_neighbors_for_exit;
 };
 
 PDESEngine *pdes_engine_create(
@@ -86,6 +91,7 @@ PDESEngine *pdes_engine_create(
     bool master
 );
 void pdes_engine_destroy(PDESEngine *engine);
+void notify_neighbours_of_end(PDESEngine *engine);
 int pdes_engine_send(PDESEngine *engine, Message *msg);
 void pdes_engine_poll(void *opaque);
 
@@ -129,7 +135,6 @@ struct PDESWWT{
     // Timer to check sync status without blocking
     QEMUTimer *sync_check_timer;
     bool finished_quantum;
-    QEMUBH *boundry_checkpoint_bh;
 
     
 };
