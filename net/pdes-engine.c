@@ -98,10 +98,6 @@ void notify_neighbours_of_end(PDESEngine *engine){
     printf("==========================================Existing PDES Engine...==========================================\n");
     Message mssg = create_message(NULL, 0, END_OF_EMULATION, get_current_virtual_for_destroy_message(engine));
     pdes_comm_send(engine->comm, &mssg);
-    if (engine->comm) {
-        pdes_comm_destroy(engine->comm);
-    }
-    g_free(engine);
     printf("==========================================PDES Engine exited.==========================================\n");
 }
 void pdes_engine_destroy(PDESEngine *engine) {
