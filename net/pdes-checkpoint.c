@@ -313,7 +313,7 @@ void create_checkpoint_bh(bool exit_after){
         printf("Checkpoint name is init_warmed, destroying engine and stopping simulation.\n");
         pdes_engine_destroy(wwt_engine->engine);
     }
-    if (exit){
+    if (exit_after){
         printf("Exiting after checkpointing because exit flag is set.\n");
         exit(0);
     }
