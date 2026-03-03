@@ -19,16 +19,16 @@ static void pdes_net_cleanup(NetClientState *nc) {
 }
 
 static ssize_t pdes_net_receive(NetClientState *nc, const uint8_t *buf, size_t size) {
-    // printf("^^^^^^^^^^^^^^ PDES Netdev receive (request to send) called with packet of length %zu ^^^^^^^^^^^^^^ \n", size);
+    printf("^^^^^^^^^^^^^^ PDES Netdev receive (request to send) called with packet of length %zu ^^^^^^^^^^^^^^ \n", size);
     PDESNetState *s = DO_UPCAST(PDESNetState, nc, nc);
     int ret = wwt_send(s->engine, buf, size);
-    // printf("^^^^^^^^^^^^^^ PDES Netdev sending packet of length %zu with return value %d^^^^^^^^^^^^^^ \n", size, ret);   
+    printf("^^^^^^^^^^^^^^ PDES Netdev sending packet of length %zu with return value %d^^^^^^^^^^^^^^ \n", size, ret);   
     return (ret < 0) ? ret : size;
 }
 
 static void pdes_recv_callback(void *opaque, const uint8_t *data, size_t len) {
     NetClientState *nc = opaque;
-    // printf("^^^^^^^^^^^^^^ PDES Netdev received packet of length %zu^^^^^^^^^^^^^^ \n", len);
+    printf("^^^^^^^^^^^^^^ PDES Netdev received packet of length %zu^^^^^^^^^^^^^^ \n", len);
     int res = qemu_send_packet(nc, data, len);
     if (res <= 0) {
         // Packet was dropped — need to handle this

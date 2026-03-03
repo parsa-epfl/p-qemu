@@ -186,9 +186,9 @@ int pdes_comm_send(PDESCommunicator *comm, Message *msg)
 
     qatomic_set_mb(&ring->write_idx, next_write);
 
-    // if(MSG_TYPE_NORMAL == msg->type){
-    //     printf("=========================== PDES Engine: Sent message of length %u and of type %u =========================== \n", msg->len, msg->type);
-    // }
+    if(MSG_TYPE_NORMAL == msg->type){
+        printf("=========================== PDES Engine: Sent message of length %u and of type %u =========================== \n", msg->len, msg->type);
+    }
     return 0;
 }
 
@@ -209,9 +209,9 @@ int pdes_comm_recv(PDESCommunicator *comm, Message *msg){
 
     qatomic_set_mb(&ring->read_idx, (ring->read_idx + 1) % RING_SIZE);
 
-    // if(MSG_TYPE_NORMAL == msg->type){
-    //     printf("=========================== PDES Engine: Received message of length %u and of type %u =========================== \n", msg->len, msg->type);
-    // }
+    if(MSG_TYPE_NORMAL == msg->type){
+        printf("=========================== PDES Engine: Received message of length %u and of type %u =========================== \n", msg->len, msg->type);
+    }
     return msg->len;
 }
 

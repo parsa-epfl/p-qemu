@@ -4,6 +4,8 @@
 #include "net/pdes-engine.h"
 #include "qemu/main-loop.h"
 #include "sysemu/runstate.h"
+#include "sysemu/cpu-timers.h"
+#include "hw/core/cpu.h"
 
 extern PDESWWT *singleton_wwt_engine = NULL;
 
@@ -74,6 +76,11 @@ PDESWWT *pdes_engine_wwt_create(
 
 
     singleton_wwt_engine = wwt;
+
+    if (wwt->should_sync){
+        icount_set_sleep(false);
+    }
+
 
     return wwt;
 }

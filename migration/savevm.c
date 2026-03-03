@@ -2994,11 +2994,12 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             snprintf(engine->checkpoint_name, sizeof(engine->checkpoint_name), "%s", name ? name : "snapshot");
             // Copy the format
             engine->checkpoint_format = format;
+            printf("Savevm: checkpoint requested with name %s and format %d\n", name ? name : "snapshot", format);
             engine->notified_neighbors = false;
             // WWT specific
             PDESWWT *wwt = get_singleton_wwt_engine();
             engine->checkpoint_quantum_round = wwt->current_quantum_round;
-            return;
+            return false;
         }
     }
 
