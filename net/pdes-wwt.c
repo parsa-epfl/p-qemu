@@ -434,6 +434,11 @@ void quanta_sync(PDESWWT *wwt_engine){
     // }
     // printf("===================WWT: going to pause for quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round, current_time, get_universal_virtual_time(wwt_engine->engine));
 
+    if(wwt_engine->should_sync){
+        // Else you'd fill up buffer
+        send_sync(wwt_engine);
+    }
+
     pdes_pause(wwt_engine->engine);
 
     // TODO DOCUMENT THIS MORE: for any operation between nodes that can have potential race conditions, it should be done after pause (to prevent race in node) but before send synnc (to prevent race in the other node)
@@ -445,10 +450,6 @@ void quanta_sync(PDESWWT *wwt_engine){
     }
 
 
-    if(wwt_engine->should_sync){
-        // Else you'd fill up buffer
-        send_sync(wwt_engine);
-    }
 
 
     // Create a timer to check sync status without blocking
