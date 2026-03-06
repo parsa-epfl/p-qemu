@@ -44,6 +44,7 @@ qemu_plugin_event_loop_poll_cb_t pf_el_pool_cb = NULL;
 qemu_plugin_periodic_check_cb_t pf_periodic_check_cb = NULL;
 qemu_plugin_flushing_local_tlb_t pf_flushing_local_tlb_cb = NULL;
 qemu_plugin_on_deliver_interrupt_cb_t pf_on_deliver_interrupt_cb = NULL;
+qemu_plugin_save_statistics_callback_t pf_save_statistics_cb = NULL;
 
 // The virtual time of each CPUs.
 struct cpu_virtual_time_t cpu_virtual_time[256];
@@ -258,6 +259,17 @@ bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
 
   return true;
 }
+
+bool qemu_plugin_register_save_statistics_callback(
+    qemu_plugin_save_statistics_callback_t cb) {
+  if (pf_save_statistics_cb) {
+    return false;
+  }
+
+  pf_save_statistics_cb = cb;
+  return true;
+}
+
 
 
 #endif

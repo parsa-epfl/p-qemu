@@ -941,4 +941,9 @@ PF_API bool qemu_plugin_register_on_deliver_interrupt_cb(
 PF_API bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
     uint64_t *var);
 
+typedef void (*qemu_plugin_save_statistics_callback_t)(const char *file_name);
+
+PF_API bool qemu_plugin_register_save_statistics_callback(
+    qemu_plugin_save_statistics_callback_t cb);
+
 #endif /* QEMU_QEMU_PLUGIN_H */

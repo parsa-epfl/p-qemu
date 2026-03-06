@@ -34,6 +34,9 @@ extern qemu_plugin_flushing_local_tlb_t pf_flushing_local_tlb_cb;
 // The callback for delivering an interrupt to a vCPU.
 extern qemu_plugin_on_deliver_interrupt_cb_t pf_on_deliver_interrupt_cb;
 
+// The callback for saving statistics.
+extern qemu_plugin_save_statistics_callback_t pf_save_statistics_cb;
+
 struct cpu_virtual_time_t {
   uint64_t vts;
   uint64_t next_deadline_in_ns;

@@ -61,4 +61,5 @@
   qemu_plugin_register_flushing_local_tlb_cb;
   qemu_plugin_register_on_deliver_interrupt_cb;
   qemu_plugin_register_plugin_quantum_generation_increment_variable;
+  qemu_plugin_register_save_statistics_callback;
 };
