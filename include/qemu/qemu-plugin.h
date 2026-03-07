@@ -946,4 +946,42 @@ typedef void (*qemu_plugin_save_statistics_callback_t)(const char *file_name);
 PF_API bool qemu_plugin_register_save_statistics_callback(
     qemu_plugin_save_statistics_callback_t cb);
 
+/**
+ * Maximum number of CPU cores supported for plugin statistics
+ */
+#define QEMU_PLUGIN_MAX_CORES 256
+
+/**
+ * struct qemu_plugin_exposed_statistics - Performance statistics structure
+ *
+ * This structure contains counters for various performance events that
+ * can be directly updated by plugins for performance modeling.
+ * The structure is aligned to 64 bytes to prevent false sharing between cores.
+ */
+struct __attribute__((aligned(64))) qemu_plugin_exposed_statistics {
+    uint64_t instruction;          /**< Total instructions executed */
+    uint64_t instruction_access;   /**< Instruction fetch accesses */
+    uint64_t data_access;          /**< Data memory accesses */
+    uint64_t private_icache_miss;  /**< Private instruction cache misses */
+    uint64_t private_dcache_miss;  /**< Private data cache misses */
+    uint64_t shared_cache_miss;    /**< Shared (LLC) cache misses */
+    uint64_t branch_count;         /**< Branch instructions executed */
+    uint64_t bp_miss;              /**< Branch prediction misses */
+    uint64_t tlb_miss;             /**< TLB misses */
+};
+
+/**
+ * qemu_plugin_get_exposed_statistics() - Get pointer to statistics for a core
+ * @core_idx: The CPU core index (0 to QEMU_PLUGIN_MAX_CORES-1)
+ *
+ * Returns a pointer to the statistics structure for the specified core,
+ * or NULL if the core index is out of range.
+ *
+ * The plugin can directly increment the counters in this structure.
+ * Each core's structure is aligned to prevent false sharing.
+ *
+ * Note: Statistics are zeroed when plugins are loaded.
+ */
+struct qemu_plugin_exposed_statistics *qemu_plugin_get_exposed_statistics(uint32_t core_idx);
+
 #endif /* QEMU_QEMU_PLUGIN_H */

@@ -49,6 +49,17 @@ qemu_plugin_save_statistics_callback_t pf_save_statistics_cb = NULL;
 // The virtual time of each CPUs.
 struct cpu_virtual_time_t cpu_virtual_time[256];
 
+/* Global statistics array exposed to plugins - aligned to prevent false sharing */
+struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES] __attribute__((aligned(64)));
+
+struct qemu_plugin_exposed_statistics *qemu_plugin_get_exposed_statistics(uint32_t core_idx)
+{
+    if (core_idx >= QEMU_PLUGIN_MAX_CORES) {
+        return NULL;
+    }
+    return &g_exposed_statistics[core_idx];
+}
+
 uint64_t qemu_plugin_read_cpu_integer_register(int reg_index) {
   g_assert_cmpstr(TARGET_NAME, ==, "aarch64");
 

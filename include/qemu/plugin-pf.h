@@ -45,4 +45,7 @@ struct cpu_virtual_time_t {
 
 extern struct cpu_virtual_time_t cpu_virtual_time[256];
 
+/* Global statistics array exposed to plugins - aligned to prevent false sharing */
+extern struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES];
+
 #endif
