@@ -46,71 +46,11 @@
 #include <bits/time.h>
 #include <stdio.h>
 
-typedef struct core_meta_info_t {
-    uint64_t ip100ns;
-    uint64_t affinity_core_idx;
-} core_meta_info_t;
-
+// Core info table for quantum mode
 static core_meta_info_t core_info_table[256];
 
 void quantum_initialize_core_info_table(const char *file_name) {
-    // By default, all cores' IPC is 0, which means not managed by the IPC and the quantum.
-    for(uint64_t i = 0; i < 256; ++i) {
-        core_info_table[i].ip100ns = 0;
-        core_info_table[i].affinity_core_idx = i;
-    }
-
-    // Load the IPC from the file. Each line is a integer and suggests the IPC.
-    FILE *fp = fopen(file_name, "r");
-    if (!fp) {
-        if (quantum_enabled()) {
-            // we don't do anything if the file is not found.
-            printf("IPC file (%s) is not found. It is needed under the quantum mode.\n", file_name);
-            exit(1);
-        } else {
-            return;
-        }
-
-    }
-
-    char line[1024];
-    int core_id = 0;
-
-
-    // The first line is the header.
-    // The header is "ipc,affinity_core_idx"
-    // do a comparison with the header.
-    assert(fgets(line, 1024, fp) != NULL);
-    bool parse_affinity = false;
-    if (strcmp(line, "ipns,affinity_core_idx\n") == 0) {
-        parse_affinity = true;
-    } else if (strcmp(line, "ipns\n") == 0) {
-        parse_affinity = false;
-    } else {
-        printf("File %s is not valid for setting up the IPNS for quantum.\n", file_name);
-        abort();
-    }
-
-    // Now, read every line and fill the structure.
-    while(fgets(line, 1024, fp) != NULL) {
-        if (parse_affinity) {
-            char *token = strtok(line, ",");
-            double ipns = strtod(token, NULL);
-            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
-            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
-            token = strtok(NULL, ",");
-            core_info_table[core_id].affinity_core_idx = atoi(token);
-        } else {
-            double ipns = strtod(line, NULL);
-            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
-            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
-            core_info_table[core_id].affinity_core_idx = core_id;
-        }
-
-        core_id += 1;
-    }
-
-    fclose(fp);
+    tcg_parse_core_info_file(file_name, core_info_table, 256);
 }
 
 
@@ -199,7 +139,17 @@ static void *mttcg_cpu_thread_fn(void *arg)
     MttcgForceRcuNotifier force_rcu;
     CPUState *cpu = arg;
 
-    cpu->ip100ns = core_info_table[cpu->cpu_index].ip100ns;
+    // Copy core info from table to CPUState
+    cpu->ip100ns = (uint64_t)(core_info_table[cpu->cpu_index].ipns * 100);
+    cpu->bx_instruction_coeff = core_info_table[cpu->cpu_index].bx_instruction_coeff;
+    cpu->bx_instruction_access_coeff = core_info_table[cpu->cpu_index].bx_instruction_access_coeff;
+    cpu->bx_data_access_coeff = core_info_table[cpu->cpu_index].bx_data_access_coeff;
+    cpu->bx_private_icache_miss_coeff = core_info_table[cpu->cpu_index].bx_private_icache_miss_coeff;
+    cpu->bx_private_dcache_miss_coeff = core_info_table[cpu->cpu_index].bx_private_dcache_miss_coeff;
+    cpu->bx_shared_cache_miss_coeff = core_info_table[cpu->cpu_index].bx_shared_cache_miss_coeff;
+    cpu->bx_branch_count_coeff = core_info_table[cpu->cpu_index].bx_branch_count_coeff;
+    cpu->bx_bp_miss_coeff = core_info_table[cpu->cpu_index].bx_bp_miss_coeff;
+    cpu->bx_tlb_miss_coeff = core_info_table[cpu->cpu_index].bx_tlb_miss_coeff;
 
     assert(tcg_enabled());
     g_assert(!icount_enabled());
@@ -255,7 +205,7 @@ static void *mttcg_cpu_thread_fn(void *arg)
 
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(core_info_table[cpu->cpu_index].affinity_core_idx, &cpuset);
+    CPU_SET(core_info_table[cpu->cpu_index].host_core_idx, &cpuset);
     int res = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
     assert(res == 0 && "Failed to set thread affinity");
 

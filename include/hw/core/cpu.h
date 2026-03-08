@@ -452,6 +452,18 @@ struct CPUState {
 
     // State for deduction of the quantum.
     uint64_t ip100ns; // instruction per 10 pico second . 0 means this core is not managed by the quantum.
+
+    // IPC model coefficients
+    double bx_instruction_coeff;
+    double bx_instruction_access_coeff;
+    double bx_data_access_coeff;
+    double bx_private_icache_miss_coeff;
+    double bx_private_dcache_miss_coeff;
+    double bx_shared_cache_miss_coeff;
+    double bx_branch_count_coeff;
+    double bx_bp_miss_coeff;
+    double bx_tlb_miss_coeff;
+
     int64_t quantum_budget;
     uint64_t quantum_generation;
     uint64_t quantum_required;
