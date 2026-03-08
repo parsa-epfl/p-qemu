@@ -214,16 +214,17 @@ void wwt_recivied_callback(void *opaque, Message *msg){
                 assert(false && "Received message with timestamp in the past while should_sync is enabled");
             }
         }else{
-            processing_time = (translated_time > current_virtual_time_translated + 1) ? translated_time : current_virtual_time_translated + 1;
+            // To prevent time drift (i.e. sims running at different speeds) from halting simulation, always process message immediately
+            processing_time = current_virtual_time_translated + 1;
         }
 
         int64_t raw_processing_time = processing_time + wwt_engine->engine->first_sync_virtual_time;
         ctx->timestamp_ns = raw_processing_time;
         // calculate time diffrence in seconds (not ns) and print in how many seconds the message will be processed
-        float time_diff_sec = (processing_time - current_virtual_time_translated) / 1e9;
         // printf("Message will be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns, translated message time is %lu ns).\n", time_diff_sec, processing_time, current_virtual_time_translated, translated_time);
         timer_mod(ctx->one_time_poll_timer, raw_processing_time);
-        pdes_inflight_add(msg, raw_processing_time);
+        // TODO remove inflight things
+        // pdes_inflight_add(msg, raw_processing_time);
 
         // printf("WWT_RECV: msg_ts=%ld universal_now=%ld raw_processing=%ld FST=%ld\n",
         // translated_time, current_virtual_time_translated, raw_processing_time,
@@ -339,6 +340,7 @@ void wwt_sync_check(){
         pdes_engine_poll(wwt_engine->engine);
         waiting = is_waiting_for_quanta(wwt_engine);
     }
+    // printf("WWT: Finished waiting for quanta for round %lu at virtual time %lu ns, proceeding with quantum sync.\n", wwt_engine->current_quantum_round, current_time);
     if (waiting){
         // TODO remove this if
         // Reschedule check
@@ -399,7 +401,9 @@ void wwt_sync_check(){
         int64_t next_quantum_time_local = next_quantum_time + wwt_engine->engine->first_sync_virtual_time;
         timer_mod(wwt_engine->quantum_timer, next_quantum_time_local);
         // call play to resume
-        pdes_play(wwt_engine->engine);
+        if(wwt_engine->should_sync){
+            pdes_play(wwt_engine->engine);
+        }
         // printf("===================WWT: Finished quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round - 1, current_time, get_universal_virtual_time(wwt_engine->engine));
     }
 }
@@ -437,9 +441,8 @@ void quanta_sync(PDESWWT *wwt_engine){
     if(wwt_engine->should_sync){
         // Else you'd fill up buffer
         send_sync(wwt_engine);
+        pdes_pause(wwt_engine->engine);
     }
-
-    pdes_pause(wwt_engine->engine);
 
     // TODO DOCUMENT THIS MORE: for any operation between nodes that can have potential race conditions, it should be done after pause (to prevent race in node) but before send synnc (to prevent race in the other node)
     // TODO add a lock to engine and everything that needs it. notify neighbor is a good example
