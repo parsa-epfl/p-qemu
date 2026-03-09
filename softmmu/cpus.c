@@ -456,7 +456,7 @@ void qemu_wait_io_event(CPUState *cpu)
             // The CPU has been stopped by the system (e.g., via pause_all_vcpus).
             // Wait until we're resumed.
             qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
-            cpu->quantum_budget = 0; // force entering the barrier.
+            cpu->quantum_budget_in_picosecond = 0; // force entering the barrier.
             cpu->quantum_budget_depleted = 1;
         } else if (!cpu->stop) {
             // CPU is running normally (not being asked to stop).

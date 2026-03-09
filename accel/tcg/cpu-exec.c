@@ -567,8 +567,18 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
     // Also clean the quantum requirement, considering that the instruction is not directly finished.
     // I know this is not a best practice, but we have to do so to avoid livelock...
     if (quantum_enabled() && cpu->ip100ns != 0) {
-        cpu_virtual_time[cpu->cpu_index].vts += cpu->quantum_required * 10000 / cpu->ip100ns;
-        cpu->quantum_required = 0;
+        cpu_virtual_time[cpu->cpu_index].vts += cpu->last_tb_instruction_count_for_quantum * 10000 / cpu->ip100ns;
+        cpu->last_tb_instruction_count_for_quantum = 0;
+        // Clear statistics from the microarchitecture.
+        g_exposed_statistics[cpu->cpu_index].branch_count = 0;
+        g_exposed_statistics[cpu->cpu_index].bp_miss = 0;
+        g_exposed_statistics[cpu->cpu_index].tlb_miss = 0;
+        g_exposed_statistics[cpu->cpu_index].instruction = 0;
+        g_exposed_statistics[cpu->cpu_index].instruction_access = 0;
+        g_exposed_statistics[cpu->cpu_index].data_access = 0;
+        g_exposed_statistics[cpu->cpu_index].private_icache_miss = 0;
+        g_exposed_statistics[cpu->cpu_index].private_dcache_miss = 0;
+        g_exposed_statistics[cpu->cpu_index].shared_cache_miss = 0;
     }
 }
 

@@ -189,13 +189,26 @@ static void *mttcg_cpu_thread_fn(void *arg)
     assert(affiliated_with_quantum);
 
     cpu->quantum_generation = dynamic_barrier_polling_increase_by_1(&quantum_barrier);
-    cpu->quantum_budget = (quantum_size * cpu->ip100ns) / 100;
-    assert(cpu->quantum_budget > 0);
-    cpu->quantum_required = 0;
+    cpu->quantum_budget_in_picosecond = (quantum_size * cpu->ip100ns) / 100 * 1000;
+    assert(cpu->quantum_budget_in_picosecond > 0);
+    cpu->last_tb_instruction_count_for_quantum = 0;
     cpu->quantum_budget_depleted = 0;
 
+    qemu_log("======================================\n");
+    qemu_log("Core%u Quantum Count: %lu ns.\n", cpu->cpu_index, quantum_size);
+    // print coefficients
+    qemu_log("Core%u bx_instruction_coeff: %lu\n", cpu->cpu_index, cpu->bx_instruction_coeff);
+    qemu_log("Core%u bx_instruction_access_coeff: %lu\n", cpu->cpu_index, cpu->bx_instruction_access_coeff);
+    qemu_log("Core%u bx_data_access_coeff: %lu\n", cpu->cpu_index, cpu->bx_data_access_coeff);
+    qemu_log("Core%u bx_private_icache_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_private_icache_miss_coeff);
+    qemu_log("Core%u bx_private_dcache_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_private_dcache_miss_coeff);
+    qemu_log("Core%u bx_shared_cache_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_shared_cache_miss_coeff);
+    qemu_log("Core%u bx_branch_count_coeff: %lu\n", cpu->cpu_index, cpu->bx_branch_count_coeff);
+    qemu_log("Core%u bx_bp_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_bp_miss_coeff);
+    qemu_log("Core%u bx_tlb_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_tlb_miss_coeff);
+    qemu_log("======================================\n");
 
-    qemu_log("Core%u Quantum Count: %lu ns, %lu instructions \n", cpu->cpu_index, quantum_size, quantum_size * cpu->ip100ns / 100);
+
 
     current_cpu = cpu;
     cpu_thread_signal_created(cpu);
@@ -224,7 +237,7 @@ continue_to_run:
             // check the quantum budget and sync before doing I/O operation.
             if (cpu->quantum_budget_depleted) {
                 cpu->quantum_budget_depleted = false;
-                while (cpu->quantum_budget <= 0) {
+                while (cpu->quantum_budget_in_picosecond <= 0) {
                     uint64_t old_generation = cpu->quantum_generation;
                     uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
                     cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
@@ -243,14 +256,14 @@ continue_to_run:
 
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
-                        cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
+                        cpu->quantum_budget_in_picosecond += (quantum_size * cpu->ip100ns) / 100 * 1000;
                         cpu->quantum_generation += 1;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
                         assert(new_generation == old_generation_low_32bit);
                         // clean the budget.
-                        cpu->quantum_budget = 0;
+                        cpu->quantum_budget_in_picosecond = 0;
                         cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
                         assert(cpu->stop || cpu->stopped || !runstate_is_running());
@@ -287,9 +300,9 @@ continue_to_run:
                 qemu_mutex_unlock_iothread();
                 // Well, it is possible that this atomic step may deplete the quantum budget.
                 // What we have to do now is to give enough quantum budget to this CPU, and remove it afterwards.
-                int64_t quantum_for_deduction = cpu->quantum_required;
+                int64_t quantum_for_deduction = cpu->last_tb_instruction_count_for_quantum;
                 // We need to sync immediately to get the quantum budget.
-                while (cpu->quantum_budget <= quantum_for_deduction) {
+                while (cpu->quantum_budget_in_picosecond <= quantum_for_deduction) {
                     uint64_t old_generation = cpu->quantum_generation;
                     uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
                     cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
@@ -308,14 +321,14 @@ continue_to_run:
 
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
-                        cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
+                        cpu->quantum_budget_in_picosecond += (quantum_size * cpu->ip100ns) / 100 * 1000;
                         cpu->quantum_generation += 1;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
                         assert(new_generation == old_generation_low_32bit);
                         // clean the budget.
-                        cpu->quantum_budget = 0;
+                        cpu->quantum_budget_in_picosecond = 0;
                         cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
                         assert(cpu->stop || cpu->stopped || !runstate_is_running());
@@ -370,19 +383,19 @@ continue_to_run:
 
                     assert(new_generation == old_generation_low_32bit + 1);
 
-                    if (cpu->quantum_budget > 0) {
+                    if (cpu->quantum_budget_in_picosecond > 0) {
                         // this means the last quantum is not completely depleted. We need to deplete it before moving forward.
-                        cpu->quantum_budget = 0;
+                        cpu->quantum_budget_in_picosecond = 0;
                     }
 
-                    cpu->quantum_budget += (quantum_size * cpu->ip100ns) / 100;
+                    cpu->quantum_budget_in_picosecond += (quantum_size * cpu->ip100ns) / 100 * 1000;
                     cpu->quantum_generation += 1;
                     cpu->touched_timer_during_last_quantum = 0;
                 } else {
                     // this means the vCPU quits due to the machine state change.
                     assert(new_generation == old_generation_low_32bit);
                     // clean the budget.
-                    cpu->quantum_budget = 0;
+                    cpu->quantum_budget_in_picosecond = 0;
                     cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                     cpu->quantum_budget_depleted = 1;
                     assert(cpu->stop || cpu->stopped || !runstate_is_running());
@@ -396,7 +409,7 @@ continue_to_run:
                     cpu_stop_current();
                     break;
                 }
-            } while (cpu->quantum_budget <= 0);
+            } while (cpu->quantum_budget_in_picosecond <= 0);
         }
 
         qemu_mutex_lock_iothread();

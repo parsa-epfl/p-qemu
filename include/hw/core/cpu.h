@@ -445,28 +445,28 @@ struct CPUState {
     GArray *iommu_notifiers;
 
     /* State for the time calculation */
-    uint64_t unknown_time; // whether this core does not have its time accurately reflected by its instruction. 
+    uint64_t unknown_time; // whether this core does not have its time accurately reflected by its instruction.
     uint64_t enter_idle_time; // number of  times when this core enters the idle mode
     uint64_t target_cycle_on_idle; // number of target cycles that are deduced due to the idle time.
-    uint64_t target_cycle_on_instruction; 
+    uint64_t target_cycle_on_instruction;
 
     // State for deduction of the quantum.
     uint64_t ip100ns; // instruction per 10 pico second . 0 means this core is not managed by the quantum.
 
-    // IPC model coefficients
-    double bx_instruction_coeff;
-    double bx_instruction_access_coeff;
-    double bx_data_access_coeff;
-    double bx_private_icache_miss_coeff;
-    double bx_private_dcache_miss_coeff;
-    double bx_shared_cache_miss_coeff;
-    double bx_branch_count_coeff;
-    double bx_bp_miss_coeff;
-    double bx_tlb_miss_coeff;
+    // IPC model coefficients (fixed-point: value * 1000 for 3 decimal places)
+    uint64_t bx_instruction_coeff;
+    uint64_t bx_instruction_access_coeff;
+    uint64_t bx_data_access_coeff;
+    uint64_t bx_private_icache_miss_coeff;
+    uint64_t bx_private_dcache_miss_coeff;
+    uint64_t bx_shared_cache_miss_coeff;
+    uint64_t bx_branch_count_coeff;
+    uint64_t bx_bp_miss_coeff;
+    uint64_t bx_tlb_miss_coeff;
 
-    int64_t quantum_budget;
+    int64_t quantum_budget_in_picosecond;
     uint64_t quantum_generation;
-    uint64_t quantum_required;
+    uint64_t last_tb_instruction_count_for_quantum;
     int quantum_budget_depleted;
 
     uint64_t touched_timer_during_last_quantum; // whether this core has touched the timer during the last quantum.

@@ -91,7 +91,7 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
             // quantum_depleted is 1 if the quantum is depleted. Then we jump to the exitreq_label.
             tcg_gen_brcondi_i32(TCG_COND_NE, quantum_depleted, 0, tcg_ctx->exitreq_label);
         }
-    } 
+    }
 
     if (cflags & CF_USE_ICOUNT) {
         tcg_gen_st16_i32(count, cpu_env,
@@ -168,10 +168,10 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     // For quantum deduce instruction.
     TCGOp *quantum_start_insn = NULL;
     if (quantum_enabled() || icount_enabled()) {
-        gen_helper_set_quantum_requirement_example(cpu_env, tcg_constant_i32(0));
+        gen_helper_set_instruction_count_for_quantum(cpu_env, tcg_constant_i32(0));
         quantum_start_insn = tcg_last_op();
     }
-    
+
     ops->tb_start(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
@@ -233,16 +233,16 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         }
     }
 
-    // Update the quantum deduce instruction. 
+    // Update the quantum deduce instruction.
     // This should be updated inside the plugin during execution.
-    // Here we use instruction count as the simplest example. 
+    // Here we use instruction count as the simplest example.
     // There is no need to deduce the quantum if the quantum is only one instruction.
     if (quantum_enabled() || icount_enabled()) {
         assert(quantum_start_insn != NULL);
         tcg_set_insn_param(quantum_start_insn, 1,
                             tcgv_i32_arg(tcg_constant_i32(db->num_insns)));
     }
-    
+
     /* Emit code to exit the TB, as indicated by db->is_jmp.  */
     ops->tb_stop(db, cpu);
     gen_tb_end(tb, cflags, icount_start_insn, db->num_insns);

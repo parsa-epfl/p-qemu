@@ -248,15 +248,15 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
     for (int i = 0; i < max_cores; ++i) {
         core_info_table[i].host_core_idx = i;
         core_info_table[i].ipns = 0.0;
-        core_info_table[i].bx_instruction_coeff = 1.0;
-        core_info_table[i].bx_instruction_access_coeff = 0.0;
-        core_info_table[i].bx_data_access_coeff = 0.0;
-        core_info_table[i].bx_private_icache_miss_coeff = 0.0;
-        core_info_table[i].bx_private_dcache_miss_coeff = 0.0;
-        core_info_table[i].bx_shared_cache_miss_coeff = 0.0;
-        core_info_table[i].bx_branch_count_coeff = 0.0;
-        core_info_table[i].bx_bp_miss_coeff = 0.0;
-        core_info_table[i].bx_tlb_miss_coeff = 0.0;
+        core_info_table[i].bx_instruction_coeff = 1000;
+        core_info_table[i].bx_instruction_access_coeff = 0;
+        core_info_table[i].bx_data_access_coeff = 0;
+        core_info_table[i].bx_private_icache_miss_coeff = 0;
+        core_info_table[i].bx_private_dcache_miss_coeff = 0;
+        core_info_table[i].bx_shared_cache_miss_coeff = 0;
+        core_info_table[i].bx_branch_count_coeff = 0;
+        core_info_table[i].bx_bp_miss_coeff = 0;
+        core_info_table[i].bx_tlb_miss_coeff = 0;
     }
 
     // Load the IPC from the file.
@@ -355,15 +355,15 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
 
         // For constant model, coefficients are fixed
         if (is_constant_model) {
-            core_info_table[core_id].bx_instruction_coeff = 1.0;
-            core_info_table[core_id].bx_instruction_access_coeff = 0.0;
-            core_info_table[core_id].bx_data_access_coeff = 0.0;
-            core_info_table[core_id].bx_private_icache_miss_coeff = 0.0;
-            core_info_table[core_id].bx_private_dcache_miss_coeff = 0.0;
-            core_info_table[core_id].bx_shared_cache_miss_coeff = 0.0;
-            core_info_table[core_id].bx_branch_count_coeff = 0.0;
-            core_info_table[core_id].bx_bp_miss_coeff = 0.0;
-            core_info_table[core_id].bx_tlb_miss_coeff = 0.0;
+            core_info_table[core_id].bx_instruction_coeff = 1000;
+            core_info_table[core_id].bx_instruction_access_coeff = 0;
+            core_info_table[core_id].bx_data_access_coeff = 0;
+            core_info_table[core_id].bx_private_icache_miss_coeff = 0;
+            core_info_table[core_id].bx_private_dcache_miss_coeff = 0;
+            core_info_table[core_id].bx_shared_cache_miss_coeff = 0;
+            core_info_table[core_id].bx_branch_count_coeff = 0;
+            core_info_table[core_id].bx_bp_miss_coeff = 0;
+            core_info_table[core_id].bx_tlb_miss_coeff = 0;
 
             // For constant model, we use ipns from CSV
             // Just verify it's positive
@@ -382,14 +382,14 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
                 exit(1);
             }
 
-            // Parse all coefficients
+            // Parse all coefficients (stored as fixed-point: value * 1000)
             const char *coeff_names[] = {
                 "bx_instruction_coeff", "bx_instruction_access_coeff", "bx_data_access_coeff",
                 "bx_private_icache_miss_coeff", "bx_private_dcache_miss_coeff",
                 "bx_shared_cache_miss_coeff", "bx_branch_count_coeff",
                 "bx_bp_miss_coeff", "bx_tlb_miss_coeff"
             };
-            double *coeffs[] = {
+            uint64_t *coeffs[] = {
                 &core_info_table[core_id].bx_instruction_coeff,
                 &core_info_table[core_id].bx_instruction_access_coeff,
                 &core_info_table[core_id].bx_data_access_coeff,
@@ -416,7 +416,8 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
                     fclose(fp);
                     exit(1);
                 }
-                *coeffs[i] = val;
+                // Convert to fixed-point: multiply by 1000 and round to nearest integer
+                *coeffs[i] = (uint64_t)(val * 1000.0 + 0.5);
             }
         }
 

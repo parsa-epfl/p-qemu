@@ -51,9 +51,11 @@ struct cpu_virtual_time_t cpu_virtual_time[256];
 
 /* Global statistics array exposed to plugins - aligned to prevent false sharing */
 struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES] __attribute__((aligned(64)));
+bool g_statistics_managed_by_plugin = false;
 
 struct qemu_plugin_exposed_statistics *qemu_plugin_get_exposed_statistics(uint32_t core_idx)
 {
+    g_statistics_managed_by_plugin = true; // this means the plugin is managing the statistics.
     if (core_idx >= QEMU_PLUGIN_MAX_CORES) {
         return NULL;
     }

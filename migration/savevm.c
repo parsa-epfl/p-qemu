@@ -2971,7 +2971,7 @@ static struct RAMBlock *get_main_memory(void) {
  * Sparse base image index format:
  * - For VMs with <= 16TB RAM: use 32-bit page indices (page number, not byte offset)
  * - For VMs with > 16TB RAM: use 64-bit page indices
- * 
+ *
  * Using page indices instead of byte offsets allows 32-bit to address up to:
  * 2^32 pages * 4KB = 16TB of memory
  */
@@ -2980,7 +2980,7 @@ static struct RAMBlock *get_main_memory(void) {
 /**
  * Load base memory from sparse format (base.data + base.index).
  * If sparse format doesn't exist, falls back to loading the complete base file.
- * 
+ *
  * @param base_name: The snapshot name (used to construct file paths)
  * @param memory_addr: Where to load the memory
  * @param memory_size: Size of the memory region
@@ -2993,7 +2993,7 @@ static int load_base_memory_sparse(const char *base_name, uint8_t *memory_addr,
     char data_file_name[350];
     char index_file_name[350];
     char base_file_name[350];
-    
+
     snprintf(data_file_name, sizeof(data_file_name), "%s.mem/base.data", base_name);
     snprintf(index_file_name, sizeof(index_file_name), "%s.mem/base.index", base_name);
     snprintf(base_file_name, sizeof(base_file_name), "%s.mem/base", base_name);
@@ -3001,7 +3001,7 @@ static int load_base_memory_sparse(const char *base_name, uint8_t *memory_addr,
     // Check if sparse format exists
     if (g_file_test(data_file_name, G_FILE_TEST_IS_REGULAR) &&
         g_file_test(index_file_name, G_FILE_TEST_IS_REGULAR)) {
-        
+
         // Load from sparse format
         FILE *data_file = fopen(data_file_name, "rb");
         if (!data_file) {
@@ -3653,16 +3653,16 @@ static void *uffd_on_demand_thread(void *main_ram) {
                 NULL,  // we don't need the original key
                 &file_offset_ptr
             );
-            
+
             if (found) {
                 // Page exists in sparse base (non-zero page)
                 uint64_t file_offset = (uint64_t)file_offset_ptr;
                 char data_file_name[350];
                 snprintf(data_file_name, sizeof(data_file_name), "%s.mem/base.data", ram->on_demand_file_name);
-                
+
                 checkpoint_file = fopen(data_file_name, "rb");
                 assert(checkpoint_file != NULL);
-                
+
                 fseek(checkpoint_file, file_offset, SEEK_SET);
                 uint size = fread(buffer, qemu_target_page_size(), 1, checkpoint_file);
                 assert(size == 1 && "Failed to read a page from base.data");
@@ -3817,8 +3817,8 @@ bool load_snapshot(const char *name, const char *vmstate,
             return false;
         }
 
-    } else if (g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR) || 
-               g_file_test(incremental_base_data_name, G_FILE_TEST_IS_REGULAR) || 
+    } else if (g_file_test(incremental_base_name, G_FILE_TEST_IS_REGULAR) ||
+               g_file_test(incremental_base_data_name, G_FILE_TEST_IS_REGULAR) ||
                g_file_test(incremental_loc_name, G_FILE_TEST_IS_REGULAR)) {
         // We are going to load the state from <name>.state.zstd.
         char state_file_name[350];
@@ -3898,17 +3898,17 @@ bool load_snapshot(const char *name, const char *vmstate,
         {
             char index_file_name[350];
             snprintf(index_file_name, sizeof(index_file_name), "%s.mem/base.index", main_ram->on_demand_file_name);
-            
+
             if (g_file_test(index_file_name, G_FILE_TEST_IS_REGULAR)) {
                 FILE *index_file = fopen(index_file_name, "rb");
                 if (index_file) {
                     main_ram->on_demand_base_sparse_index = g_hash_table_new(g_direct_hash, g_direct_equal);
-                    
+
                     uint64_t target_page_size = qemu_target_page_size();
                     uint64_t page_count = main_ram->used_length / target_page_size;
                     bool use_32bit_index = (page_count <= SPARSE_INDEX_MAX_32BIT_PAGES);
                     uint64_t file_offset = 0;
-                    
+
                     while (true) {
                         uint64_t page_index;
                         if (use_32bit_index) {
@@ -3918,7 +3918,7 @@ bool load_snapshot(const char *name, const char *vmstate,
                         } else {
                             if (fread(&page_index, sizeof(uint64_t), 1, index_file) != 1) break;
                         }
-                        
+
                         // Store: memory_offset (page_index * page_size) -> file_offset (position in base.data)
                         uint64_t memory_offset = page_index * target_page_size;
                         g_hash_table_insert(main_ram->on_demand_base_sparse_index,
@@ -3927,7 +3927,7 @@ bool load_snapshot(const char *name, const char *vmstate,
 
                         file_offset += target_page_size;
                     }
-                    
+
                     fclose(index_file);
                     printf("Loaded sparse base index with %u entries for on-demand loading (%s index)\n",
                            g_hash_table_size(main_ram->on_demand_base_sparse_index),
@@ -3941,7 +3941,7 @@ bool load_snapshot(const char *name, const char *vmstate,
             // For sparse format, we skip the size check since base file may not exist
             char base_mem_file[300];
             snprintf(base_mem_file, sizeof(base_mem_file), "%s.mem/base", main_ram->on_demand_file_name);
-            
+
             if (main_ram->on_demand_base_sparse_index == NULL) {
                 // Using complete base format - validate size
                 FILE *base_mem_file_fd = fopen(base_mem_file, "rb");

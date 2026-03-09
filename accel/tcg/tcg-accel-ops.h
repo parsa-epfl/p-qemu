@@ -18,28 +18,29 @@
 typedef struct core_meta_info_t {
     int64_t host_core_idx;  // Host CPU core for affinity
     double ipns;
-    double bx_instruction_coeff;
-    double bx_instruction_access_coeff;
-    double bx_data_access_coeff;
-    double bx_private_icache_miss_coeff;
-    double bx_private_dcache_miss_coeff;
-    double bx_shared_cache_miss_coeff;
-    double bx_branch_count_coeff;
-    double bx_bp_miss_coeff;
-    double bx_tlb_miss_coeff;
+    // Coefficients are stored as fixed-point (value * 1000 for 3 decimal places)
+    uint64_t bx_instruction_coeff;
+    uint64_t bx_instruction_access_coeff;
+    uint64_t bx_data_access_coeff;
+    uint64_t bx_private_icache_miss_coeff;
+    uint64_t bx_private_dcache_miss_coeff;
+    uint64_t bx_shared_cache_miss_coeff;
+    uint64_t bx_branch_count_coeff;
+    uint64_t bx_bp_miss_coeff;
+    uint64_t bx_tlb_miss_coeff;
 } core_meta_info_t;
 
-/* Check if model is constant type (bx_instruction_coeff=1.0, others=0.0) */
+/* Check if model is constant type (bx_instruction_coeff=1000, others=0) */
 static inline bool core_model_is_constant(const core_meta_info_t *info) {
-    return (info->bx_instruction_coeff == 1.0 &&
-            info->bx_instruction_access_coeff == 0.0 &&
-            info->bx_data_access_coeff == 0.0 &&
-            info->bx_private_icache_miss_coeff == 0.0 &&
-            info->bx_private_dcache_miss_coeff == 0.0 &&
-            info->bx_shared_cache_miss_coeff == 0.0 &&
-            info->bx_branch_count_coeff == 0.0 &&
-            info->bx_bp_miss_coeff == 0.0 &&
-            info->bx_tlb_miss_coeff == 0.0);
+    return (info->bx_instruction_coeff == 1000 &&
+            info->bx_instruction_access_coeff == 0 &&
+            info->bx_data_access_coeff == 0 &&
+            info->bx_private_icache_miss_coeff == 0 &&
+            info->bx_private_dcache_miss_coeff == 0 &&
+            info->bx_shared_cache_miss_coeff == 0 &&
+            info->bx_branch_count_coeff == 0 &&
+            info->bx_bp_miss_coeff == 0 &&
+            info->bx_tlb_miss_coeff == 0);
 }
 
 void tcg_cpus_destroy(CPUState *cpu);

@@ -231,7 +231,7 @@ static void *rr_cpu_thread_fn(void *arg)
             cpu->bx_tlb_miss_coeff = core_info_table[cpu->cpu_index].bx_tlb_miss_coeff;
 
             // No quantum is required at the beginning.
-            cpu->quantum_required = 0;
+            cpu->last_tb_instruction_count_for_quantum = 0;
         }
     }
 
@@ -295,8 +295,8 @@ static void *rr_cpu_thread_fn(void *arg)
             for (int i = 0; i < rr_cpu_count(); i++) {
                 CPUState *cpu = first_cpu;
                 while (cpu) {
-                    cpu_virtual_time[cpu->cpu_index].vts += cpu->quantum_required * 10000 / cpu->ip100ns;
-                    cpu->quantum_required = 0;
+                    cpu_virtual_time[cpu->cpu_index].vts += cpu->last_tb_instruction_count_for_quantum * 10000 / cpu->ip100ns;
+                    cpu->last_tb_instruction_count_for_quantum = 0;
                     cpu = CPU_NEXT(cpu);
                 }
             }
