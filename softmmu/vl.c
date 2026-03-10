@@ -485,6 +485,10 @@ static QemuOptsList qemu_quantum_opts = {
             .name = "ipns_file",
             .type = QEMU_OPT_STRING,
         },
+        {
+            .name = "rr",
+            .type = QEMU_OPT_BOOL,
+        },
         {} /* end of list */
     },
 };

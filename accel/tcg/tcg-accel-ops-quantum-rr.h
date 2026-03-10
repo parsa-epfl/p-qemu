@@ -23,4 +23,6 @@ void quantum_rr_start_vcpu_thread(CPUState *cpu);
 /* Initialize quantum-rr mode */
 void quantum_rr_initialize(void);
 
+void quantum_rr_initialize_core_info_table(const char *file_name);
+
 #endif /* TCG_ACCEL_OPS_QUANTUM_RR_H */

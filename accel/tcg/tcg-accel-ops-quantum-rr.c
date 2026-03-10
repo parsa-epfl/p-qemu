@@ -29,6 +29,8 @@
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-quantum-rr.h"
+#include "hw/core/cpu.h"
+
 
 /* Current CPU being executed (for debugging/monitoring) */
 static CPUState *quantum_rr_current_cpu;
@@ -88,6 +90,7 @@ static void quantum_rr_wait_io_event(void)
     CPUState *cpu;
 
     while (all_cpu_threads_idle()) {
+        // this means the main thread is stopping us and want to do something, so we should wait.
         qemu_cond_wait_iothread(first_cpu->halt_cond);
     }
 
@@ -170,7 +173,7 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
     CPUState *cpu = arg;
     int cpu_count;
     uint64_t cycle = 0;
-    uint64_t next_check_threshold = icount_checking_period;
+    uint64_t next_check_threshold = quantum_check_threshold;
 
     assert(tcg_enabled());
     rcu_register_thread();
@@ -240,24 +243,13 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
                 r = tcg_cpus_exec(cpu);
                 qemu_mutex_lock_iothread();
 
-                switch (r) {
-                case EXCP_DEBUG:
+                if (r == EXCP_DEBUG) {
                     cpu_handle_guest_debug(cpu);
                     break;
-                case EXCP_ATOMIC:
+                } else if (r == EXCP_ATOMIC) {
                     qemu_mutex_unlock_iothread();
                     cpu_exec_step_atomic(cpu);
                     qemu_mutex_lock_iothread();
-                    break;
-                case EXCP_HLT:
-                    /* CPU halted (WFI) - consume full quantum and advance time */
-                    quantum_rr_advance_vtime(cpu);
-                    break;
-                case EXCP_QUANTUM:
-                    /* Quantum depleted - normal case, time already advanced */
-                    break;
-                default:
-                    /* Other exceptions - time advanced during execution */
                     break;
                 }
             } else {
@@ -274,20 +266,6 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
         /* Clear current CPU indicator */
         qatomic_set(&quantum_rr_current_cpu, NULL);
 
-        /* Track cycles for periodic checks */
-        cycle += quantum_size;
-        if (icount_checking_period != 0 && cycle >= next_check_threshold) {
-            if (pf_periodic_check_cb) {
-                if (pf_periodic_check_cb(icount_checking_period)) {
-                    pause_all_vcpus();
-                }
-            }
-            next_check_threshold += icount_checking_period;
-        }
-
-        /* Post-round processing with BQL held */
-        qemu_mutex_lock_iothread();
-
         /* Handle timers */
         increase_quantum_time();
         int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
@@ -296,6 +274,20 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
         if (deadline == 0) {
             qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
             qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+        }
+
+        /* Track cycles for periodic checks */
+        cycle += quantum_size;
+        if (quantum_check_threshold != 0 && cycle >= next_check_threshold) {
+            if (pf_periodic_check_cb) {
+                if (pf_periodic_check_cb(quantum_check_threshold)) {
+                    qemu_notify_event();
+                    while (!first_cpu->stop) {
+                        sched_yield();
+                    }
+                }
+            }
+            next_check_threshold += quantum_check_threshold;
         }
 
         /* Synchronize virtual time across all CPUs */
@@ -315,8 +307,6 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
 
         /* Handle unplugged CPUs */
         quantum_rr_deal_with_unplugged_cpus();
-
-        qemu_mutex_unlock_iothread();
     }
 
     rcu_remove_force_rcu_notifier(&force_rcu);
@@ -339,7 +329,7 @@ void quantum_rr_start_vcpu_thread(CPUState *cpu)
         qemu_cond_init(cpu->halt_cond);
 
         /* share a single thread for all cpus with TCG */
-        snprintf(thread_name, VCPU_THREAD_NAME_SIZE, "ALL CPUs/TCG-QRR");
+        snprintf(thread_name, VCPU_THREAD_NAME_SIZE, "ALL CPUs/TCG");
         qemu_thread_create(cpu->thread, thread_name,
                            quantum_rr_cpu_thread_fn,
                            cpu, QEMU_THREAD_JOINABLE);

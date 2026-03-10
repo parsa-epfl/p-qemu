@@ -602,7 +602,7 @@ void pause_all_vcpus(void)
 
     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, false);
 
-    if (quantum_enabled()) {
+    if (quantum_enabled() && !quantum_rr_enabled()) {
         // In quantum mode, set a flag in the barrier so all vCPUs will pause
         // together at the end of the current quantum, instead of sending
         // individual pause requests that would be polled inefficiently.
