@@ -2392,8 +2392,8 @@ static void configure_accelerators(const char *progname)
         exit(1);
     }
 
-    if (quantum_enabled && !qemu_tcg_mttcg_enabled()) {
-        error_report("-quantum is only supported with Multithreaded TCG");
+    if (quantum_enabled && !qemu_tcg_mttcg_enabled() && !quantum_rr_enabled()) {
+        error_report("-quantum is only supported with Multithreaded TCG (use rr=on for single-threaded)");
         exit(1);
     }
 }

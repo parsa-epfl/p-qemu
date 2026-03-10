@@ -43,6 +43,7 @@
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
 #include "tcg-accel-ops-quantum.h"
+#include "tcg-accel-ops-quantum-rr.h"
 
 /* common functionality among all TCG variants */
 
@@ -191,7 +192,12 @@ static inline void tcg_remove_all_breakpoints(CPUState *cpu)
 
 static void tcg_accel_ops_init(AccelOpsClass *ops)
 {
-    if (quantum_enabled()) {
+    if (quantum_enabled() && quantum_rr_enabled()) {
+        /* Quantum-RR mode: single-threaded round-robin with quantum */
+        ops->create_vcpu_thread = quantum_rr_start_vcpu_thread;
+        ops->kick_vcpu_thread = quantum_rr_kick_vcpu_thread;
+        quantum_rr_initialize();
+    } else if (quantum_enabled()) {
         ops->create_vcpu_thread = quantum_start_vcpu_thread;
         ops->kick_vcpu_thread = quantum_kick_vcpu_thread;
         ops->handle_interrupt = tcg_handle_interrupt;

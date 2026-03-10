@@ -438,7 +438,6 @@ void rrtcg_initialize_core_info_table(const char *file_name);
 
 void icount_configure(QemuOpts *opts, Error **errp)
 {
-    assert(false && "at this stage, the icount mode is not fully supported.");
     const char *option = qemu_opt_get(opts, "shift");
     bool sleep = qemu_opt_get_bool(opts, "sleep", true);
     bool align = qemu_opt_get_bool(opts, "align", false);
