@@ -282,9 +282,11 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             if (pf_periodic_check_cb) {
                 if (pf_periodic_check_cb(quantum_check_threshold)) {
                     qemu_notify_event();
+                    qemu_mutex_unlock_iothread();
                     while (!first_cpu->stop) {
                         sched_yield();
                     }
+                    qemu_mutex_lock_iothread();
                 }
             }
             next_check_threshold += quantum_check_threshold;
