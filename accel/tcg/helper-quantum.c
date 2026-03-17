@@ -9,7 +9,64 @@
 #include "hw/core/cpu.h"
 #include "sysemu/cpu-timers.h"
 #include "sysemu/quantum.h"
+#include "sysemu/asid-coeff.h"
 #include "qemu/plugin-pf.h"
+
+/*
+ * quantum_flush_current_stats - deduct accumulated stats into the quantum budget.
+ *
+ * Computes required_picoseconds from the current plugin-exposed statistics
+ * using the core's current bx_* coefficients, zeroes the statistics, updates
+ * target_cycle_on_instruction and cpu_virtual_time[].vts, and subtracts from
+ * quantum_budget_in_picosecond.
+ *
+ * Does NOT set quantum_budget_depleted — the caller is responsible for
+ * checking the budget afterward.
+ *
+ * Safe to call from translated-code context (e.g. TTBR write handlers) where
+ * current_cpu is valid.  Uses the passed @cpu parameter throughout.
+ */
+void quantum_flush_current_stats(CPUState *cpu)
+{
+    if (!quantum_enabled() || cpu->ip100ns == 0) {
+        return;
+    }
+
+    uint64_t required_picoseconds = 0;
+
+    if (g_statistics_managed_by_plugin) {
+        struct qemu_plugin_exposed_statistics *this_core_info =
+            &g_exposed_statistics[cpu->cpu_index];
+
+        required_picoseconds += this_core_info->instruction * cpu->bx_instruction_coeff;
+        required_picoseconds += this_core_info->instruction_access * cpu->bx_instruction_access_coeff;
+        required_picoseconds += this_core_info->data_access * cpu->bx_data_access_coeff;
+        required_picoseconds += this_core_info->private_icache_miss * cpu->bx_private_icache_miss_coeff;
+        required_picoseconds += this_core_info->private_dcache_miss * cpu->bx_private_dcache_miss_coeff;
+        required_picoseconds += this_core_info->shared_cache_miss * cpu->bx_shared_cache_miss_coeff;
+        required_picoseconds += this_core_info->branch_count * cpu->bx_branch_count_coeff;
+        required_picoseconds += this_core_info->bp_miss * cpu->bx_bp_miss_coeff;
+        required_picoseconds += this_core_info->tlb_miss * cpu->bx_tlb_miss_coeff;
+
+        /* Reset statistics so they are not counted again. */
+        memset(this_core_info, 0, sizeof(*this_core_info));
+    } else {
+        /* Non-plugin mode: instructions counted directly. */
+        required_picoseconds = cpu->last_tb_instruction_count_for_quantum * 1000;
+    }
+
+    cpu->last_tb_instruction_count_for_quantum = 0;
+
+    /* Convert picoseconds to nanoseconds for target_cycle tracking. */
+    cpu->target_cycle_on_instruction += required_picoseconds / 1000;
+
+    /* Deduct from quantum budget (in picoseconds). */
+    cpu->quantum_budget_in_picosecond -= required_picoseconds;
+
+    /* Advance virtual time (vts is in nanoseconds). */
+    uint64_t current_index = cpu->cpu_index;
+    cpu_virtual_time[current_index].vts += required_picoseconds / 1000;
+}
 
 uint32_t HELPER(check_and_deduce_quantum)(CPUArchState *env) {
     assert(quantum_enabled());
@@ -20,42 +77,8 @@ uint32_t HELPER(check_and_deduce_quantum)(CPUArchState *env) {
         return false;
     }
 
-    // OK, now let's calculate the target time we should deduce (in picoseconds).
-    // Coefficients are in fixed-point (value * 1000), so stat * coeff gives picoseconds directly.
-    uint64_t required_picoseconds = 0;
-
-    if (g_statistics_managed_by_plugin) {
-        struct qemu_plugin_exposed_statistics *this_core_info = &g_exposed_statistics[current_cpu->cpu_index];
-
-        required_picoseconds += this_core_info->instruction * current_cpu->bx_instruction_coeff;
-        required_picoseconds += this_core_info->instruction_access * current_cpu->bx_instruction_access_coeff;
-        required_picoseconds += this_core_info->data_access * current_cpu->bx_data_access_coeff;
-        required_picoseconds += this_core_info->private_icache_miss * current_cpu->bx_private_icache_miss_coeff;
-        required_picoseconds += this_core_info->private_dcache_miss * current_cpu->bx_private_dcache_miss_coeff;
-        required_picoseconds += this_core_info->shared_cache_miss * current_cpu->bx_shared_cache_miss_coeff;
-        required_picoseconds += this_core_info->branch_count * current_cpu->bx_branch_count_coeff;
-        required_picoseconds += this_core_info->bp_miss * current_cpu->bx_bp_miss_coeff;
-        required_picoseconds += this_core_info->tlb_miss * current_cpu->bx_tlb_miss_coeff;
-
-        // clean statistics.
-        memset(this_core_info, 0, sizeof(*this_core_info));
-    } else {
-        // For non-plugin mode: instructions are counted directly, convert to picoseconds
-        required_picoseconds = current_cpu->last_tb_instruction_count_for_quantum * 1000;
-    }
-
-    current_cpu->last_tb_instruction_count_for_quantum = 0;
-
-
-    // Convert picoseconds to nanoseconds for target_cycle tracking (divide by 1000)
-    current_cpu->target_cycle_on_instruction += required_picoseconds / 1000;
-
-    // deduction (budget is in picoseconds).
-    current_cpu->quantum_budget_in_picosecond -= required_picoseconds;
-
-    // increase the target cycle (vts is in nanoseconds).
-    uint64_t current_index = current_cpu->cpu_index;
-    cpu_virtual_time[current_index].vts += required_picoseconds / 1000;
+    /* Flush accumulated statistics and deduct from the quantum budget. */
+    quantum_flush_current_stats(current_cpu);
 
     if (current_cpu->quantum_budget_in_picosecond <= 0) {
         current_cpu->quantum_budget_depleted = 1;

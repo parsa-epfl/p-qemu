@@ -212,6 +212,18 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             cpu->bx_bp_miss_coeff = quantum_rr_core_info_table[cpu->cpu_index].bx_bp_miss_coeff;
             cpu->bx_tlb_miss_coeff = quantum_rr_core_info_table[cpu->cpu_index].bx_tlb_miss_coeff;
 
+            cpu->is_ipc_model = !core_model_is_constant(&quantum_rr_core_info_table[cpu->cpu_index]);
+
+            cpu->default_bx_instruction_coeff         = cpu->bx_instruction_coeff;
+            cpu->default_bx_instruction_access_coeff  = cpu->bx_instruction_access_coeff;
+            cpu->default_bx_data_access_coeff         = cpu->bx_data_access_coeff;
+            cpu->default_bx_private_icache_miss_coeff = cpu->bx_private_icache_miss_coeff;
+            cpu->default_bx_private_dcache_miss_coeff = cpu->bx_private_dcache_miss_coeff;
+            cpu->default_bx_shared_cache_miss_coeff   = cpu->bx_shared_cache_miss_coeff;
+            cpu->default_bx_branch_count_coeff        = cpu->bx_branch_count_coeff;
+            cpu->default_bx_bp_miss_coeff             = cpu->bx_bp_miss_coeff;
+            cpu->default_bx_tlb_miss_coeff            = cpu->bx_tlb_miss_coeff;
+
             /* Initialize quantum tracking */
             cpu->last_tb_instruction_count_for_quantum = 0;
             cpu->quantum_generation = 0;

@@ -151,6 +151,22 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu->bx_bp_miss_coeff = core_info_table[cpu->cpu_index].bx_bp_miss_coeff;
     cpu->bx_tlb_miss_coeff = core_info_table[cpu->cpu_index].bx_tlb_miss_coeff;
 
+    /* Record whether this is an ipc-model core (enables ASID switching).
+     * Use the existing core_model_is_constant() inline to avoid storing the
+     * model_type string; ipc-model is simply "not constant". */
+    cpu->is_ipc_model = !core_model_is_constant(&core_info_table[cpu->cpu_index]);
+
+    /* Save defaults so the TTBR handler can fall back to them. */
+    cpu->default_bx_instruction_coeff         = cpu->bx_instruction_coeff;
+    cpu->default_bx_instruction_access_coeff  = cpu->bx_instruction_access_coeff;
+    cpu->default_bx_data_access_coeff         = cpu->bx_data_access_coeff;
+    cpu->default_bx_private_icache_miss_coeff = cpu->bx_private_icache_miss_coeff;
+    cpu->default_bx_private_dcache_miss_coeff = cpu->bx_private_dcache_miss_coeff;
+    cpu->default_bx_shared_cache_miss_coeff   = cpu->bx_shared_cache_miss_coeff;
+    cpu->default_bx_branch_count_coeff        = cpu->bx_branch_count_coeff;
+    cpu->default_bx_bp_miss_coeff             = cpu->bx_bp_miss_coeff;
+    cpu->default_bx_tlb_miss_coeff            = cpu->bx_tlb_miss_coeff;
+
     assert(tcg_enabled());
     g_assert(!icount_enabled());
 

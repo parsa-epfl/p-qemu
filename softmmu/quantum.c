@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include "sysemu/quantum.h"
+#include "sysemu/asid-coeff.h"
 #include "qemu/option.h"
 
 uint64_t quantum_size = 0;
@@ -49,6 +50,10 @@ void quantum_configure(QemuOpts *opts, Error **errp) {
         // parse the given csv file.
         quantum_initialize_core_info_table(ipns_file);
     }
+
+    /* Load optional per-ASID coefficient overrides (ipc-model cores only).
+     * If the file is absent the table stays NULL and the feature is a no-op. */
+    tcg_parse_asid_info_file("asid_info.csv");
 
     assert(quantum_size < 0x7fffffff);
 }

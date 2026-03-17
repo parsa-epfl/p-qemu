@@ -30,6 +30,7 @@
 #include "sysemu/replay.h"
 #include "sysemu/cpu-timers.h"
 #include "sysemu/quantum.h"
+#include "sysemu/asid-coeff.h"
 #include "qemu/main-loop.h"
 #include "qemu/guest-random.h"
 #include "qemu/timer.h"
@@ -436,4 +437,138 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
     }
 
     fclose(fp);
+}
+
+/* -----------------------------------------------------------------------
+ * Per-ASID coefficient table
+ * ----------------------------------------------------------------------- */
+
+/*
+ * Global ASID coefficient hash table.  Written once at startup
+ * (tcg_parse_asid_info_file), then read-only — concurrent reads from
+ * multiple vCPU threads are therefore safe without locking.
+ *
+ * Keys:   GUINT_TO_POINTER((guint)asid)  [uint16_t ASID, fits in pointer]
+ * Values: heap-allocated asid_coeff_t *  (freed by the table destructor)
+ */
+static GHashTable *asid_coeff_table;
+
+GHashTable *tcg_get_asid_coeff_table(void)
+{
+    return asid_coeff_table;
+}
+
+void tcg_parse_asid_info_file(const char *file_name)
+{
+    FILE *fp = fopen(file_name, "r");
+    if (!fp) {
+        /* Optional file — silently ignore if absent */
+        return;
+    }
+
+    /* Create table on first successful open */
+    asid_coeff_table = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+                                              NULL, g_free);
+
+    char line[1024];
+
+    /* Read and validate header */
+    if (fgets(line, sizeof(line), fp) == NULL) {
+        fprintf(stderr, "Error: Empty asid_info.csv file\n");
+        fclose(fp);
+        exit(1);
+    }
+
+    if (strstr(line, "asid") == NULL ||
+        strstr(line, "bx_instruction_coeff") == NULL) {
+        fprintf(stderr,
+                "Error: Invalid asid_info.csv header. "
+                "Expected: asid,bx_instruction_coeff,...\n");
+        fclose(fp);
+        exit(1);
+    }
+
+    int row = 0;
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        /* Skip blank lines and comments */
+        if (line[0] == '\n' || line[0] == '#' || line[0] == '\0') {
+            continue;
+        }
+
+        /* Trim trailing newline */
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n') {
+            line[len - 1] = '\0';
+        }
+
+        char *saveptr = NULL;
+
+        /* Column 1: asid */
+        char *token = strtok_r(line, ",", &saveptr);
+        if (!token) {
+            fprintf(stderr, "Error: asid_info.csv row %d: failed to parse asid\n", row);
+            fclose(fp);
+            exit(1);
+        }
+        uint64_t asid = strtoull(token, NULL, 10);
+        if (asid > 0xFFFF) {
+            fprintf(stderr,
+                    "Error: asid_info.csv row %d: ASID %lu exceeds 16-bit range\n",
+                    row, asid);
+            fclose(fp);
+            exit(1);
+        }
+
+        asid_coeff_t *entry = g_new0(asid_coeff_t, 1);
+
+        /* Columns 2–10: the 9 bx_* coefficients */
+        const char *coeff_names[] = {
+            "bx_instruction_coeff", "bx_instruction_access_coeff",
+            "bx_data_access_coeff", "bx_private_icache_miss_coeff",
+            "bx_private_dcache_miss_coeff", "bx_shared_cache_miss_coeff",
+            "bx_branch_count_coeff", "bx_bp_miss_coeff", "bx_tlb_miss_coeff"
+        };
+        uint64_t *coeffs[] = {
+            &entry->bx_instruction_coeff,
+            &entry->bx_instruction_access_coeff,
+            &entry->bx_data_access_coeff,
+            &entry->bx_private_icache_miss_coeff,
+            &entry->bx_private_dcache_miss_coeff,
+            &entry->bx_shared_cache_miss_coeff,
+            &entry->bx_branch_count_coeff,
+            &entry->bx_bp_miss_coeff,
+            &entry->bx_tlb_miss_coeff
+        };
+
+        for (int i = 0; i < 9; i++) {
+            token = strtok_r(NULL, ",", &saveptr);
+            if (!token) {
+                fprintf(stderr,
+                        "Error: asid_info.csv row %d: failed to parse %s\n",
+                        row, coeff_names[i]);
+                g_free(entry);
+                fclose(fp);
+                exit(1);
+            }
+            double val = strtod(token, NULL);
+            if (val < 0) {
+                fprintf(stderr,
+                        "Error: asid_info.csv row %d: %s must be non-negative, got %f\n",
+                        row, coeff_names[i], val);
+                g_free(entry);
+                fclose(fp);
+                exit(1);
+            }
+            /* Fixed-point: multiply by 1000 and round */
+            *coeffs[i] = (uint64_t)(val * 1000.0 + 0.5);
+        }
+
+        g_hash_table_insert(asid_coeff_table,
+                            GUINT_TO_POINTER((guint)asid),
+                            entry);
+        row++;
+    }
+
+    fclose(fp);
+    fprintf(stderr, "Loaded %d ASID entries from %s\n", row, file_name);
 }

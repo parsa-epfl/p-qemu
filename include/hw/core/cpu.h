@@ -453,7 +453,15 @@ struct CPUState {
     // State for deduction of the quantum.
     uint64_t ip100ns; // instruction per 10 pico second . 0 means this core is not managed by the quantum.
 
+    /*
+     * True when this core was configured with model_type="ipc-model" in
+     * core_info.csv.  Only ipc-model cores participate in per-ASID
+     * coefficient switching via the TTBR write handler.
+     */
+    bool is_ipc_model;
+
     // IPC model coefficients (fixed-point: value * 1000 for 3 decimal places)
+    // These are the *active* coefficients and may be overridden by ASID lookup.
     uint64_t bx_instruction_coeff;
     uint64_t bx_instruction_access_coeff;
     uint64_t bx_data_access_coeff;
@@ -463,6 +471,20 @@ struct CPUState {
     uint64_t bx_branch_count_coeff;
     uint64_t bx_bp_miss_coeff;
     uint64_t bx_tlb_miss_coeff;
+
+    /*
+     * Default (core_info.csv) coefficients — used as fallback when the
+     * current ASID is not found in the global ASID coefficient table.
+     */
+    uint64_t default_bx_instruction_coeff;
+    uint64_t default_bx_instruction_access_coeff;
+    uint64_t default_bx_data_access_coeff;
+    uint64_t default_bx_private_icache_miss_coeff;
+    uint64_t default_bx_private_dcache_miss_coeff;
+    uint64_t default_bx_shared_cache_miss_coeff;
+    uint64_t default_bx_branch_count_coeff;
+    uint64_t default_bx_bp_miss_coeff;
+    uint64_t default_bx_tlb_miss_coeff;
 
     int64_t quantum_budget_in_picosecond;
     uint64_t quantum_generation;
