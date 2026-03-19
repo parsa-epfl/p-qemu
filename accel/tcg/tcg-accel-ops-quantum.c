@@ -206,7 +206,8 @@ static void *mttcg_cpu_thread_fn(void *arg)
     assert(affiliated_with_quantum);
 
     cpu->quantum_generation = dynamic_barrier_polling_increase_by_1(&quantum_barrier);
-    cpu->quantum_budget_in_picosecond = (quantum_size * cpu->ip100ns) / 100 * 1000;
+    /* Budget is always in picoseconds: quantum_size (ns) * 1000 = ps. */
+    cpu->quantum_budget_in_picosecond = (int64_t)quantum_size * 1000;
     assert(cpu->quantum_budget_in_picosecond > 0);
     cpu->last_tb_instruction_count_for_quantum = 0;
     cpu->quantum_budget_depleted = 0;
@@ -277,14 +278,10 @@ continue_to_run:
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_generation += 1;
-                        /* Check ESESC stage transition before replenishing the
-                         * budget so the replenishment uses the correct rate. */
+                        /* Check ESESC stage transition before replenishing. */
                         esesc_check_cpu_stage_transition(cpu);
-                        uint64_t replen_ip100ns =
-                            (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
-                             && cpu->esesc_derived_ip100ns)
-                            ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
-                        cpu->quantum_budget_in_picosecond += (quantum_size * replen_ip100ns) / 100 * 1000;
+                        /* Budget is always one quantum of simulated time in ps. */
+                        cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
@@ -327,9 +324,12 @@ continue_to_run:
                 qemu_mutex_unlock_iothread();
                 // Well, it is possible that this atomic step may deplete the quantum budget.
                 // What we have to do now is to give enough quantum budget to this CPU, and remove it afterwards.
-                int64_t quantum_for_deduction = cpu->last_tb_instruction_count_for_quantum;
+                // Convert instruction count to picoseconds so the comparison is in consistent units.
+                int64_t quantum_for_deduction_ps =
+                    (int64_t)cpu->last_tb_instruction_count_for_quantum * 100000
+                    / (cpu->ip100ns ? (int64_t)cpu->ip100ns : 1);
                 // We need to sync immediately to get the quantum budget.
-                while (cpu->quantum_budget_in_picosecond <= quantum_for_deduction) {
+                while (cpu->quantum_budget_in_picosecond <= quantum_for_deduction_ps) {
                     uint64_t old_generation = cpu->quantum_generation;
                     uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
                     cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
@@ -349,14 +349,10 @@ continue_to_run:
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_generation += 1;
-                        /* Check ESESC stage transition before replenishing the
-                         * budget so the replenishment uses the correct rate. */
+                        /* Check ESESC stage transition before replenishing. */
                         esesc_check_cpu_stage_transition(cpu);
-                        uint64_t replen_ip100ns =
-                            (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
-                             && cpu->esesc_derived_ip100ns)
-                            ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
-                        cpu->quantum_budget_in_picosecond += (quantum_size * replen_ip100ns) / 100 * 1000;
+                        /* Budget is always one quantum of simulated time in ps. */
+                        cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
@@ -423,14 +419,10 @@ continue_to_run:
                     }
 
                     cpu->quantum_generation += 1;
-                    /* Check ESESC stage transition before replenishing the
-                     * budget so the replenishment uses the correct rate. */
+                    /* Check ESESC stage transition before replenishing. */
                     esesc_check_cpu_stage_transition(cpu);
-                    uint64_t replen_ip100ns =
-                        (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
-                         && cpu->esesc_derived_ip100ns)
-                        ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
-                    cpu->quantum_budget_in_picosecond += (quantum_size * replen_ip100ns) / 100 * 1000;
+                    /* Budget is always one quantum of simulated time in ps. */
+                    cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                     cpu->touched_timer_during_last_quantum = 0;
                 } else {
                     // this means the vCPU quits due to the machine state change.

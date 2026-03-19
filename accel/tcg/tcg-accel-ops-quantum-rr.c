@@ -155,18 +155,13 @@ static void quantum_rr_replenish_budgets(void)
         esesc_check_cpu_stage_transition(cpu);
 
         /*
-         * Replenish the quantum budget.  In ESESC follow mode, use the
-         * derived IPNS; otherwise fall back to the base ip100ns from
-         * core_info.csv.  If esesc_derived_ip100ns is still 0 (before
-         * the first normal stage completes), ip100ns is used as a fallback.
+         * Replenish the quantum budget.  The budget is always one quantum of
+         * simulated time expressed in picoseconds: quantum_size (ns) * 1000.
+         * IPC rate (ip100ns) does not affect the budget size — it only
+         * affects how many instructions fit within that time window, which
+         * is handled in quantum_flush_current_stats().
          */
-        uint64_t replen_ip100ns =
-            (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
-             && cpu->esesc_derived_ip100ns)
-            ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
-
-        cpu->quantum_budget_in_picosecond =
-            (quantum_size * replen_ip100ns) / 100 * 1000;
+        cpu->quantum_budget_in_picosecond = (int64_t)quantum_size * 1000;
         assert(cpu->quantum_budget_in_picosecond > 0);
 
         /* Reset depletion flag */

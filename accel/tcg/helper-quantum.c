@@ -97,9 +97,18 @@ void quantum_flush_current_stats(CPUState *cpu)
     } else {
         /*
          * Normal mode (plain quantum or ESESC normal stage), non-plugin path:
-         * instructions counted directly.
+         * convert instruction count to picoseconds using ip100ns.
+         *
+         * ip100ns = instrs / 100ns, so:
+         *   time_ns  = instr_count / (ip100ns / 100)
+         *   time_ps  = time_ns * 1000
+         *            = instr_count * 100 * 1000 / ip100ns
+         *            = instr_count * 100000 / ip100ns
+         *
+         * ip100ns is guaranteed non-zero (checked at top of function).
          */
-        required_picoseconds = cpu->last_tb_instruction_count_for_quantum * 1000;
+        required_picoseconds = cpu->last_tb_instruction_count_for_quantum
+                               * 100000 / cpu->ip100ns;
 
         if (quantum_esesc_enabled()) {
             cpu->esesc_normal_instructions +=
