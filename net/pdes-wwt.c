@@ -135,7 +135,7 @@ void send_sync(PDESWWT *wwt_engine){
     uint64_t round = wwt_engine->current_quantum_round;
     Message sync_msg = create_message((uint8_t *)&round, sizeof(round), MSG_TYPE_SYNC, get_current_virtual_for_sync_message(wwt_engine->engine));
     pdes_engine_send(wwt_engine->engine, &sync_msg);
-    // printf("WWT: Sent sync message at virtual time %lu ns.\n", get_universal_virtual_time(wwt_engine->engine));
+    // printf("WWT: Sent sync message for round %lu at virtual time %lu ns.\n", round, get_universal_virtual_time(wwt_engine->engine));
 }
 void finish_quantum(PDESWWT *wwt_engine){
     send_sync(wwt_engine);
@@ -299,8 +299,9 @@ int notify_neighbors_for_drain(PDESEngine *engine, char * snapshot_name, Snapsho
 bool sync_checkpoint_check(){
     PDESWWT *wwt_engine = get_singleton_wwt_engine();
     if(wwt_engine->engine->needs_to_checkpoint){
-        notify_neighbors_for_drain(wwt_engine->engine, wwt_engine->engine->checkpoint_name, wwt_engine->engine->checkpoint_format);
-
+        if(!wwt_engine->engine->notified_neighbors){
+            notify_neighbors_for_drain(wwt_engine->engine, wwt_engine->engine->checkpoint_name, wwt_engine->engine->checkpoint_format);
+        }
         // Create bh and reschedule this again
         if ((wwt_engine->current_quantum_round < wwt_engine->engine->checkpoint_quantum_round) && wwt_engine->should_sync){
             printf("Checkpoint quantum round %lu is less than current quantum round %lu\n", wwt_engine->engine->checkpoint_quantum_round, wwt_engine->current_quantum_round);
@@ -436,21 +437,29 @@ void quanta_sync(PDESWWT *wwt_engine){
     //         assert (universal_time == expected_time && "Current time should be greater than or equal to expected time at the start of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
     //     }
     // }
-    // printf("===================WWT: going to pause for quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round, current_time, get_universal_virtual_time(wwt_engine->engine));
-
+    // Pause any progress before we decide if we need to send in sync and other communications
     if(wwt_engine->should_sync){
-        // Else you'd fill up buffer
-        send_sync(wwt_engine);
         pdes_pause(wwt_engine->engine);
     }
-
     // TODO DOCUMENT THIS MORE: for any operation between nodes that can have potential race conditions, it should be done after pause (to prevent race in node) but before send synnc (to prevent race in the other node)
     // TODO add a lock to engine and everything that needs it. notify neighbor is a good example
     pdes_engine_poll(wwt_engine->engine);
 
-    if(wwt_engine->engine->needs_to_checkpoint){
+
+
+    // printf("===================WWT: going to pause for quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round, current_time, get_universal_virtual_time(wwt_engine->engine));
+
+    // Need to send notify neighbors before sync, or else before here and notify the neighbor might move to the next quantum
+    if(wwt_engine->engine->needs_to_checkpoint && !wwt_engine->engine->notified_neighbors){
         notify_neighbors_for_drain(wwt_engine->engine, wwt_engine->engine->checkpoint_name, wwt_engine->engine->checkpoint_format);
     }
+    if(wwt_engine->should_sync){
+        // Else you'd fill up buffer
+        send_sync(wwt_engine);
+    }
+
+    
+    
 
 
 

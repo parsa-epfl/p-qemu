@@ -237,7 +237,7 @@ void qemu_plugin_notify_fully_warmed(void){
   if (engine == NULL){
     // directly request savvm
     // TODO address the hardcoded init_warmed name
-    save_snapshot("init_warmed", true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, NULL);
+    save_snapshot("init_warmed", true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE, NULL);
   }else{
     finish_initiate_checkpoint(engine);
   }
