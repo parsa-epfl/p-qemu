@@ -362,7 +362,7 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
 
         // For constant model, coefficients are fixed
         if (is_constant_model) {
-            core_info_table[core_id].bx_instruction_coeff = 1000;
+            core_info_table[core_id].bx_instruction_coeff = 1000 / ipns; // Note that this coeffient is applied to instructions, whose inverse is IPNS.
             core_info_table[core_id].bx_instruction_access_coeff = 0;
             core_info_table[core_id].bx_data_access_coeff = 0;
             core_info_table[core_id].bx_private_icache_miss_coeff = 0;
