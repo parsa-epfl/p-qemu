@@ -11,14 +11,19 @@
 #include "sysemu/quantum.h"
 #include "sysemu/asid-coeff.h"
 #include "qemu/plugin-pf.h"
+#include "esesc.h"
 
 /*
  * quantum_flush_current_stats - deduct accumulated stats into the quantum budget.
  *
- * Computes required_picoseconds from the current plugin-exposed statistics
- * using the core's current bx_* coefficients, zeroes the statistics, updates
- * target_cycle_on_instruction and cpu_virtual_time[].vts, and subtracts from
- * quantum_budget_in_picosecond.
+ * In normal quantum mode (or ESESC normal stage), computes required_picoseconds
+ * from the current plugin-exposed statistics using the core's bx_* coefficients,
+ * zeroes the statistics, updates target_cycle_on_instruction and
+ * cpu_virtual_time[].vts, and subtracts from quantum_budget_in_picosecond.
+ *
+ * In ESESC follow stage, uses a constant IPNS (esesc_derived_ip100ns) derived
+ * from the preceding normal stage instead of the bx_* model.  Plugin statistics
+ * are not touched in follow mode.
  *
  * Does NOT set quantum_budget_depleted — the caller is responsible for
  * checking the budget afterward.
@@ -34,7 +39,38 @@ void quantum_flush_current_stats(CPUState *cpu)
 
     uint64_t required_picoseconds = 0;
 
-    if (g_statistics_managed_by_plugin) {
+    if (quantum_esesc_enabled() && cpu->esesc_in_follow_mode) {
+        /*
+         * ESESC follow mode: use a constant IPNS derived from the preceding
+         * normal stage.  Plugin statistics are intentionally ignored — they
+         * are not reset here either; they will be discarded at the next
+         * normal → follow transition.
+         *
+         * last_tb_instruction_count_for_quantum is always available and is
+         * equivalent to the plugin's .instruction counter (confirmed).
+         *
+         * time_ps = instr_count * 100_000 / esesc_derived_ip100ns
+         *
+         * Derivation: ip100ns = instrs/100ns, so
+         *   time_ns  = instr_count / (esesc_derived_ip100ns / 100)
+         *   time_ps  = time_ns * 1000
+         *            = instr_count * 100 * 1000 / esesc_derived_ip100ns
+         *            = instr_count * 100000 / esesc_derived_ip100ns
+         *
+         * If esesc_derived_ip100ns is still 0 (before the first normal stage
+         * completes), fall back to the base ip100ns so the CPU makes progress.
+         */
+        uint64_t instr_count = cpu->last_tb_instruction_count_for_quantum;
+        uint64_t effective_ip100ns = cpu->esesc_derived_ip100ns
+                                     ? cpu->esesc_derived_ip100ns
+                                     : cpu->ip100ns;
+        required_picoseconds = instr_count * 100000 / effective_ip100ns;
+
+    } else if (g_statistics_managed_by_plugin) {
+        /*
+         * Normal mode (plain quantum or ESESC normal stage), plugin path:
+         * use the bx_* IPC model.
+         */
         struct qemu_plugin_exposed_statistics *this_core_info =
             &g_exposed_statistics[cpu->cpu_index];
 
@@ -48,11 +84,27 @@ void quantum_flush_current_stats(CPUState *cpu)
         required_picoseconds += this_core_info->bp_miss * cpu->bx_bp_miss_coeff;
         required_picoseconds += this_core_info->tlb_miss * cpu->bx_tlb_miss_coeff;
 
+        /*
+         * Accumulate instruction count for ESESC IPNS derivation.
+         * Must be read before the memset below.
+         */
+        if (quantum_esesc_enabled()) {
+            cpu->esesc_normal_instructions += this_core_info->instruction;
+        }
+
         /* Reset statistics so they are not counted again. */
         memset(this_core_info, 0, sizeof(*this_core_info));
     } else {
-        /* Non-plugin mode: instructions counted directly. */
+        /*
+         * Normal mode (plain quantum or ESESC normal stage), non-plugin path:
+         * instructions counted directly.
+         */
         required_picoseconds = cpu->last_tb_instruction_count_for_quantum * 1000;
+
+        if (quantum_esesc_enabled()) {
+            cpu->esesc_normal_instructions +=
+                cpu->last_tb_instruction_count_for_quantum;
+        }
     }
 
     cpu->last_tb_instruction_count_for_quantum = 0;

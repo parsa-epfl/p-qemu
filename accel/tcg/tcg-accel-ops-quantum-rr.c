@@ -30,6 +30,7 @@
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-quantum-rr.h"
 #include "hw/core/cpu.h"
+#include "esesc.h"
 
 
 /* Current CPU being executed (for debugging/monitoring) */
@@ -139,9 +140,33 @@ static void quantum_rr_replenish_budgets(void)
     CPUState *cpu;
 
     CPU_FOREACH(cpu) {
-        /* Calculate quantum budget: (quantum_size * ip100ns) / 100 * 1000 picoseconds */
+        /*
+         * Advance the per-CPU quantum generation counter.  In RR mode there
+         * is no barrier, so we use this as a simple round counter that the
+         * ESESC stage-transition logic can compare against.
+         */
+        cpu->quantum_generation++;
+
+        /*
+         * Check whether this CPU should switch from ESESC normal → follow
+         * mode.  Must happen after quantum_generation is incremented and
+         * before the budget is replenished so the correct rate is used.
+         */
+        esesc_check_cpu_stage_transition(cpu);
+
+        /*
+         * Replenish the quantum budget.  In ESESC follow mode, use the
+         * derived IPNS; otherwise fall back to the base ip100ns from
+         * core_info.csv.  If esesc_derived_ip100ns is still 0 (before
+         * the first normal stage completes), ip100ns is used as a fallback.
+         */
+        uint64_t replen_ip100ns =
+            (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
+             && cpu->esesc_derived_ip100ns)
+            ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
+
         cpu->quantum_budget_in_picosecond =
-            (quantum_size * cpu->ip100ns) / 100 * 1000;
+            (quantum_size * replen_ip100ns) / 100 * 1000;
         assert(cpu->quantum_budget_in_picosecond > 0);
 
         /* Reset depletion flag */
@@ -228,6 +253,9 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             cpu->last_tb_instruction_count_for_quantum = 0;
             cpu->quantum_generation = 0;
             cpu->quantum_budget_depleted = 0;
+
+            /* Initialise ESESC per-CPU state (no-op when ESESC is not enabled). */
+            esesc_init_cpu(cpu);
         }
     }
 
@@ -293,6 +321,12 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
         if (quantum_check_threshold != 0 && cycle >= next_check_threshold) {
             if (pf_periodic_check_cb) {
                 if (pf_periodic_check_cb(quantum_check_threshold)) {
+                    /*
+                     * Checkpoint requested: transition all CPUs from ESESC
+                     * follow mode back to normal mode before the snapshot.
+                     */
+                    esesc_reset_all_cpus_to_normal();
+
                     qemu_notify_event();
                     qemu_mutex_unlock_iothread();
                     while (!first_cpu->stop) {

@@ -14,6 +14,7 @@
 #include "sysemu/runstate.h"
 #include "sysemu/quantum.h"
 #include "qemu/plugin-pf.h"
+#include "accel/tcg/esesc.h"
 
 
 typedef struct delayed_interrupt_info {
@@ -237,6 +238,15 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         if (barrier->next_check_threshold != 0 && barrier->current_cycle >= barrier->next_check_threshold) {
             if (pf_periodic_check_cb != NULL) {
                 if(pf_periodic_check_cb(quantum_check_threshold)) {
+                    /*
+                     * Checkpoint requested: transition all CPUs from ESESC
+                     * follow mode back to normal mode before the snapshot is
+                     * taken.  This must happen before broadcast_stop_request
+                     * is set so that the ESESC state is consistent when the
+                     * CPUs wake up after the snapshot.
+                     */
+                    esesc_reset_all_cpus_to_normal();
+
                     broadcast_stop_request = 1;
                     // Notify the main loop for the incoming snapshot event.
                     qemu_notify_event();

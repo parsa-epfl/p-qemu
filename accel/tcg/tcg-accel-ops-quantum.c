@@ -43,6 +43,7 @@
 
 #include "qemu/dynamic_barrier.h"
 #include "sysemu/quantum.h"
+#include "esesc.h"
 #include <bits/time.h>
 #include <stdio.h>
 
@@ -210,6 +211,9 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu->last_tb_instruction_count_for_quantum = 0;
     cpu->quantum_budget_depleted = 0;
 
+    /* Initialise ESESC per-CPU state (no-op when ESESC is not enabled). */
+    esesc_init_cpu(cpu);
+
     qemu_log("======================================\n");
     qemu_log("Core%u Quantum Count: %lu ns.\n", cpu->cpu_index, quantum_size);
     // print coefficients
@@ -272,8 +276,15 @@ continue_to_run:
 
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
-                        cpu->quantum_budget_in_picosecond += (quantum_size * cpu->ip100ns) / 100 * 1000;
                         cpu->quantum_generation += 1;
+                        /* Check ESESC stage transition before replenishing the
+                         * budget so the replenishment uses the correct rate. */
+                        esesc_check_cpu_stage_transition(cpu);
+                        uint64_t replen_ip100ns =
+                            (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
+                             && cpu->esesc_derived_ip100ns)
+                            ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
+                        cpu->quantum_budget_in_picosecond += (quantum_size * replen_ip100ns) / 100 * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
@@ -337,8 +348,15 @@ continue_to_run:
 
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
-                        cpu->quantum_budget_in_picosecond += (quantum_size * cpu->ip100ns) / 100 * 1000;
                         cpu->quantum_generation += 1;
+                        /* Check ESESC stage transition before replenishing the
+                         * budget so the replenishment uses the correct rate. */
+                        esesc_check_cpu_stage_transition(cpu);
+                        uint64_t replen_ip100ns =
+                            (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
+                             && cpu->esesc_derived_ip100ns)
+                            ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
+                        cpu->quantum_budget_in_picosecond += (quantum_size * replen_ip100ns) / 100 * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
                     } else {
                         // this means the vCPU quits due to the machine state change.
@@ -404,8 +422,15 @@ continue_to_run:
                         cpu->quantum_budget_in_picosecond = 0;
                     }
 
-                    cpu->quantum_budget_in_picosecond += (quantum_size * cpu->ip100ns) / 100 * 1000;
                     cpu->quantum_generation += 1;
+                    /* Check ESESC stage transition before replenishing the
+                     * budget so the replenishment uses the correct rate. */
+                    esesc_check_cpu_stage_transition(cpu);
+                    uint64_t replen_ip100ns =
+                        (quantum_esesc_enabled() && cpu->esesc_in_follow_mode
+                         && cpu->esesc_derived_ip100ns)
+                        ? cpu->esesc_derived_ip100ns : cpu->ip100ns;
+                    cpu->quantum_budget_in_picosecond += (quantum_size * replen_ip100ns) / 100 * 1000;
                     cpu->touched_timer_during_last_quantum = 0;
                 } else {
                     // this means the vCPU quits due to the machine state change.

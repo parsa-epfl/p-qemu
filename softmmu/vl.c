@@ -489,6 +489,10 @@ static QemuOptsList qemu_quantum_opts = {
             .name = "rr",
             .type = QEMU_OPT_BOOL,
         },
+        {
+            .name = "esesc",
+            .type = QEMU_OPT_BOOL,
+        },
         {} /* end of list */
     },
 };

@@ -20,7 +20,8 @@ specific_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'CONFIG_TCG'], if_true: files(
   'cputlb.c',
   'monitor.c',
   'helper-quantum.c',
-  'helper-profile-one-instruction.c'
+  'helper-profile-one-instruction.c',
+  'esesc.c'
 ))
 
 tcg_module_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'CONFIG_TCG'], if_true: files(

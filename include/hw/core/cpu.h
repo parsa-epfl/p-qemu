@@ -491,6 +491,12 @@ struct CPUState {
     uint64_t last_tb_instruction_count_for_quantum;
     int quantum_budget_depleted;
 
+    /* ESESC mode per-CPU state */
+    bool     esesc_in_follow_mode;                 /* true = follow stage, false = normal stage */
+    uint64_t esesc_normal_stage_start_generation;  /* quantum_generation when current normal stage began */
+    uint64_t esesc_normal_instructions;            /* instructions retired during current normal stage */
+    uint64_t esesc_derived_ip100ns;                /* derived ip100ns for follow mode; 0 until first normal stage completes */
+
     uint64_t touched_timer_during_last_quantum; // whether this core has touched the timer during the last quantum.
 
     // State to query the latest timer interrupt deadline.
