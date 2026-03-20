@@ -292,6 +292,9 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
         cpu_count = quantum_rr_cpu_count();
 
         /* Execute all CPUs in round-robin order */
+
+        bool all_cpu_stopped = true;
+
         CPU_FOREACH(cpu) {
             int r;
 
@@ -325,48 +328,54 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             if (cpu->exit_request) {
                 qatomic_set_mb(&cpu->exit_request, 0);
             }
+
+            if (!cpu->stopped) {
+                all_cpu_stopped = false;
+            }
         }
 
         /* Clear current CPU indicator */
         qatomic_set(&quantum_rr_current_cpu, NULL);
 
-        /* Handle timers */
-        increase_quantum_time();
-        int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
-                                                      QEMU_TIMER_ATTR_ALL);
+        if (!all_cpu_stopped) {
+            /* Handle timers */
+            increase_quantum_time();
+            int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                                          QEMU_TIMER_ATTR_ALL);
 
-        if (deadline == 0) {
-            qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
-            qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-        }
-
-        /* Track cycles for periodic checks */
-        cycle += quantum_size;
-        if (quantum_check_threshold != 0 && cycle >= next_check_threshold) {
-            if (pf_periodic_check_cb) {
-                if (pf_periodic_check_cb(quantum_check_threshold)) {
-                    /*
-                     * Checkpoint requested: transition all CPUs from ESESC
-                     * follow mode back to normal mode before the snapshot.
-                     */
-                    esesc_reset_all_cpus_to_normal();
-
-                    qemu_notify_event();
-                    qemu_mutex_unlock_iothread();
-                    while (!all_cpu_has_stop_request()) {
-                        sched_yield();
-                    }
-                    qemu_mutex_lock_iothread();
-                }
+            if (deadline == 0) {
+                qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+                qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
             }
-            next_check_threshold += quantum_check_threshold;
-        }
 
-        /* Synchronize virtual time across all CPUs */
-        quantum_rr_sync_virtual_time(cpu_count);
+            /* Track cycles for periodic checks */
+            cycle += quantum_size;
+            if (quantum_check_threshold != 0 && cycle >= next_check_threshold) {
+                if (pf_periodic_check_cb) {
+                    if (pf_periodic_check_cb(quantum_check_threshold)) {
+                        /*
+                         * Checkpoint requested: transition all CPUs from ESESC
+                         * follow mode back to normal mode before the snapshot.
+                         */
+                        esesc_reset_all_cpus_to_normal();
+
+                        qemu_notify_event();
+                        qemu_mutex_unlock_iothread();
+                        while (!all_cpu_has_stop_request()) {
+                            sched_yield();
+                        }
+                        qemu_mutex_lock_iothread();
+                    }
+                }
+                next_check_threshold += quantum_check_threshold;
+            }
+
+            /* Synchronize virtual time across all CPUs */
+            quantum_rr_sync_virtual_time(cpu_count);
+        }
 
         /* Check if all CPUs are idle - notify main loop to prevent deadlock */
-        if (all_cpu_has_stopped() || all_cpu_threads_idle()) {
+        if (all_cpu_stopped || all_cpu_threads_idle()) {
             /*
              * When all cpus are sleeping (e.g in WFI), to avoid a deadlock
              * in the main_loop, wake it up in order to start the warp timer.
