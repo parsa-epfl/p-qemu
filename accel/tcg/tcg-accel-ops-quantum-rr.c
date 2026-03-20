@@ -116,8 +116,8 @@ static void quantum_rr_wait_io_event(void)
     }
 
 
-    if (all_cpu_has_stopped()) {
-        while (all_cpu_has_stopped()) {
+    if (all_cpu_has_stopped() && all_cpu_threads_idle()) {
+        while (all_cpu_has_stopped() && all_cpu_threads_idle()) {
             // this means the main thread is stopping us and want to do something, so we should wait.
             qemu_cond_wait_iothread(first_cpu->halt_cond);
         }
