@@ -14,6 +14,7 @@
 #include "qemu/osdep.h"
 #include "qemu/lockable.h"
 #include "qemu/timer.h"
+#include "sysemu/cpus.h"
 #include "sysemu/runstate.h"
 #include "sysemu/tcg.h"
 #include "sysemu/replay.h"
@@ -85,18 +86,46 @@ static int quantum_rr_cpu_count(void)
     return cpu_count;
 }
 
+static bool all_cpu_has_stop_request(void) {
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        if (!cpu->stop) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool all_cpu_has_stopped(void) {
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        if (cpu->running) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* Wait for I/O events */
 static void quantum_rr_wait_io_event(void)
 {
     CPUState *cpu;
 
-    while (all_cpu_threads_idle()) {
-        // this means the main thread is stopping us and want to do something, so we should wait.
-        qemu_cond_wait_iothread(first_cpu->halt_cond);
-    }
-
     CPU_FOREACH(cpu) {
         qemu_wait_io_event_common(cpu);
+    }
+
+
+    if (all_cpu_has_stopped()) {
+        while (all_cpu_has_stopped()) {
+            // this means the main thread is stopping us and want to do something, so we should wait.
+            qemu_cond_wait_iothread(first_cpu->halt_cond);
+        }
+
+        // after resumed, you need to check all work queue of the CPU.
+        CPU_FOREACH(cpu) {
+            qemu_wait_io_event_common(cpu);
+        }
     }
 }
 
@@ -324,7 +353,7 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
 
                     qemu_notify_event();
                     qemu_mutex_unlock_iothread();
-                    while (!first_cpu->stop) {
+                    while (!all_cpu_has_stop_request()) {
                         sched_yield();
                     }
                     qemu_mutex_lock_iothread();
@@ -337,7 +366,7 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
         quantum_rr_sync_virtual_time(cpu_count);
 
         /* Check if all CPUs are idle - notify main loop to prevent deadlock */
-        if (all_cpu_threads_idle()) {
+        if (all_cpu_has_stopped() || all_cpu_threads_idle()) {
             /*
              * When all cpus are sleeping (e.g in WFI), to avoid a deadlock
              * in the main_loop, wake it up in order to start the warp timer.
