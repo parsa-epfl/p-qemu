@@ -99,7 +99,7 @@ static bool all_cpu_has_stop_request(void) {
 static bool all_cpu_has_stopped(void) {
     CPUState *cpu;
     CPU_FOREACH(cpu) {
-        if (cpu->running) {
+        if (!cpu->stopped) {
             return false;
         }
     }
