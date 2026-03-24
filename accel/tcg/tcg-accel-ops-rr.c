@@ -220,27 +220,33 @@ static void *rr_cpu_thread_fn(void *arg)
 
             // Set up the ipc value for this processor.
             cpu->ip100ns = (uint64_t)(core_info_table[cpu->cpu_index].ipns * 100);
-            cpu->bx_instruction_coeff = core_info_table[cpu->cpu_index].bx_instruction_coeff;
-            cpu->bx_instruction_access_coeff = core_info_table[cpu->cpu_index].bx_instruction_access_coeff;
-            cpu->bx_data_access_coeff = core_info_table[cpu->cpu_index].bx_data_access_coeff;
-            cpu->bx_private_icache_miss_coeff = core_info_table[cpu->cpu_index].bx_private_icache_miss_coeff;
-            cpu->bx_private_dcache_miss_coeff = core_info_table[cpu->cpu_index].bx_private_dcache_miss_coeff;
-            cpu->bx_shared_cache_miss_coeff = core_info_table[cpu->cpu_index].bx_shared_cache_miss_coeff;
-            cpu->bx_branch_count_coeff = core_info_table[cpu->cpu_index].bx_branch_count_coeff;
-            cpu->bx_bp_miss_coeff = core_info_table[cpu->cpu_index].bx_bp_miss_coeff;
-            cpu->bx_tlb_miss_coeff = core_info_table[cpu->cpu_index].bx_tlb_miss_coeff;
+            cpu->bx_private_icache_miss_coeff           = core_info_table[cpu->cpu_index].bx_private_icache_miss_coeff;
+            cpu->bx_private_dcache_miss_load_ptw_coeff  = core_info_table[cpu->cpu_index].bx_private_dcache_miss_load_ptw_coeff;
+            cpu->bx_private_dcache_miss_store_coeff     = core_info_table[cpu->cpu_index].bx_private_dcache_miss_store_coeff;
+            cpu->bx_shared_cache_miss_coeff             = core_info_table[cpu->cpu_index].bx_shared_cache_miss_coeff;
+            cpu->bx_bp_miss_coeff                       = core_info_table[cpu->cpu_index].bx_bp_miss_coeff;
+            cpu->bx_drain_pipeline_coeff                = core_info_table[cpu->cpu_index].bx_drain_pipeline_coeff;
+            cpu->bx_drain_store_buffer_coeff            = core_info_table[cpu->cpu_index].bx_drain_store_buffer_coeff;
+            cpu->bx_read_noc_hop_coeff                  = core_info_table[cpu->cpu_index].bx_read_noc_hop_coeff;
+            cpu->bx_write_noc_hop_coeff                 = core_info_table[cpu->cpu_index].bx_write_noc_hop_coeff;
+            cpu->bx_ifetch_noc_hop_coeff                = core_info_table[cpu->cpu_index].bx_ifetch_noc_hop_coeff;
+            cpu->bx_instruction_u_coeff                 = core_info_table[cpu->cpu_index].bx_instruction_u_coeff;
+            cpu->bx_instruction_k_coeff                 = core_info_table[cpu->cpu_index].bx_instruction_k_coeff;
 
             cpu->is_ipc_model = !core_model_is_constant(&core_info_table[cpu->cpu_index]);
 
-            cpu->default_bx_instruction_coeff         = cpu->bx_instruction_coeff;
-            cpu->default_bx_instruction_access_coeff  = cpu->bx_instruction_access_coeff;
-            cpu->default_bx_data_access_coeff         = cpu->bx_data_access_coeff;
-            cpu->default_bx_private_icache_miss_coeff = cpu->bx_private_icache_miss_coeff;
-            cpu->default_bx_private_dcache_miss_coeff = cpu->bx_private_dcache_miss_coeff;
-            cpu->default_bx_shared_cache_miss_coeff   = cpu->bx_shared_cache_miss_coeff;
-            cpu->default_bx_branch_count_coeff        = cpu->bx_branch_count_coeff;
-            cpu->default_bx_bp_miss_coeff             = cpu->bx_bp_miss_coeff;
-            cpu->default_bx_tlb_miss_coeff            = cpu->bx_tlb_miss_coeff;
+            cpu->default_bx_private_icache_miss_coeff           = cpu->bx_private_icache_miss_coeff;
+            cpu->default_bx_private_dcache_miss_load_ptw_coeff  = cpu->bx_private_dcache_miss_load_ptw_coeff;
+            cpu->default_bx_private_dcache_miss_store_coeff     = cpu->bx_private_dcache_miss_store_coeff;
+            cpu->default_bx_shared_cache_miss_coeff             = cpu->bx_shared_cache_miss_coeff;
+            cpu->default_bx_bp_miss_coeff                       = cpu->bx_bp_miss_coeff;
+            cpu->default_bx_drain_pipeline_coeff                = cpu->bx_drain_pipeline_coeff;
+            cpu->default_bx_drain_store_buffer_coeff            = cpu->bx_drain_store_buffer_coeff;
+            cpu->default_bx_read_noc_hop_coeff                  = cpu->bx_read_noc_hop_coeff;
+            cpu->default_bx_write_noc_hop_coeff                 = cpu->bx_write_noc_hop_coeff;
+            cpu->default_bx_ifetch_noc_hop_coeff                = cpu->bx_ifetch_noc_hop_coeff;
+            cpu->default_bx_instruction_u_coeff                 = cpu->bx_instruction_u_coeff;
+            cpu->default_bx_instruction_k_coeff                 = cpu->bx_instruction_k_coeff;
 
             // No quantum is required at the beginning.
             cpu->last_tb_instruction_count_for_quantum = 0;

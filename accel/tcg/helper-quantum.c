@@ -66,30 +66,34 @@ void quantum_flush_current_stats(CPUState *cpu)
                                      : cpu->ip100ns;
         required_picoseconds = instr_count * 100000 / effective_ip100ns;
 
-    } else if (g_statistics_managed_by_plugin) {
+    } else if (g_statistics_managed_by_plugin && cpu->is_ipc_model) {
         /*
          * Normal mode (plain quantum or ESESC normal stage), plugin path:
-         * use the bx_* IPC model.
+         * use the bx_* IPC model.  Constant-IPNS cores fall through to the
+         * instruction-count path below.
          */
         struct qemu_plugin_exposed_statistics *this_core_info =
             &g_exposed_statistics[cpu->cpu_index];
 
-        required_picoseconds += this_core_info->instruction * cpu->bx_instruction_coeff;
-        required_picoseconds += this_core_info->instruction_access * cpu->bx_instruction_access_coeff;
-        required_picoseconds += this_core_info->data_access * cpu->bx_data_access_coeff;
         required_picoseconds += this_core_info->private_icache_miss * cpu->bx_private_icache_miss_coeff;
-        required_picoseconds += this_core_info->private_dcache_miss * cpu->bx_private_dcache_miss_coeff;
+        required_picoseconds += this_core_info->private_dcache_miss_load_ptw * cpu->bx_private_dcache_miss_load_ptw_coeff;
+        required_picoseconds += this_core_info->private_dcache_miss_store * cpu->bx_private_dcache_miss_store_coeff;
         required_picoseconds += this_core_info->shared_cache_miss * cpu->bx_shared_cache_miss_coeff;
-        required_picoseconds += this_core_info->branch_count * cpu->bx_branch_count_coeff;
         required_picoseconds += this_core_info->bp_miss * cpu->bx_bp_miss_coeff;
-        required_picoseconds += this_core_info->tlb_miss * cpu->bx_tlb_miss_coeff;
+        required_picoseconds += this_core_info->drain_pipeline * cpu->bx_drain_pipeline_coeff;
+        required_picoseconds += this_core_info->drain_store_buffer * cpu->bx_drain_store_buffer_coeff;
+        required_picoseconds += this_core_info->read_noc_hop * cpu->bx_read_noc_hop_coeff;
+        required_picoseconds += this_core_info->write_noc_hop * cpu->bx_write_noc_hop_coeff;
+        required_picoseconds += this_core_info->ifetch_noc_hop * cpu->bx_ifetch_noc_hop_coeff;
+        required_picoseconds += this_core_info->instruction_u * cpu->bx_instruction_u_coeff;
+        required_picoseconds += this_core_info->instruction_k * cpu->bx_instruction_k_coeff;
 
         /*
          * Accumulate instruction count for ESESC IPNS derivation.
          * Must be read before the memset below.
          */
         if (quantum_esesc_enabled()) {
-            cpu->esesc_normal_instructions += this_core_info->instruction;
+            cpu->esesc_normal_instructions += this_core_info->instruction_u + this_core_info->instruction_k;
         }
 
         /* Reset statistics so they are not counted again. */

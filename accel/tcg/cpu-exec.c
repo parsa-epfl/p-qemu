@@ -570,15 +570,8 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
         cpu_virtual_time[cpu->cpu_index].vts += cpu->last_tb_instruction_count_for_quantum * 10000 / cpu->ip100ns;
         cpu->last_tb_instruction_count_for_quantum = 0;
         // Clear statistics from the microarchitecture.
-        g_exposed_statistics[cpu->cpu_index].branch_count = 0;
-        g_exposed_statistics[cpu->cpu_index].bp_miss = 0;
-        g_exposed_statistics[cpu->cpu_index].tlb_miss = 0;
-        g_exposed_statistics[cpu->cpu_index].instruction = 0;
-        g_exposed_statistics[cpu->cpu_index].instruction_access = 0;
-        g_exposed_statistics[cpu->cpu_index].data_access = 0;
-        g_exposed_statistics[cpu->cpu_index].private_icache_miss = 0;
-        g_exposed_statistics[cpu->cpu_index].private_dcache_miss = 0;
-        g_exposed_statistics[cpu->cpu_index].shared_cache_miss = 0;
+        memset(&g_exposed_statistics[cpu->cpu_index], 0,
+               sizeof(g_exposed_statistics[0]));
     }
 }
 

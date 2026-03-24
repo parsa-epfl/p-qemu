@@ -18,29 +18,25 @@
 typedef struct core_meta_info_t {
     int64_t host_core_idx;  // Host CPU core for affinity
     double ipns;
+    bool is_constant;       // true if model_type == "constant"
     // Coefficients are stored as fixed-point (value * 1000 for 3 decimal places)
-    uint64_t bx_instruction_coeff;
-    uint64_t bx_instruction_access_coeff;
-    uint64_t bx_data_access_coeff;
     uint64_t bx_private_icache_miss_coeff;
-    uint64_t bx_private_dcache_miss_coeff;
+    uint64_t bx_private_dcache_miss_load_ptw_coeff;
+    uint64_t bx_private_dcache_miss_store_coeff;
     uint64_t bx_shared_cache_miss_coeff;
-    uint64_t bx_branch_count_coeff;
     uint64_t bx_bp_miss_coeff;
-    uint64_t bx_tlb_miss_coeff;
+    uint64_t bx_drain_pipeline_coeff;
+    uint64_t bx_drain_store_buffer_coeff;
+    uint64_t bx_read_noc_hop_coeff;
+    uint64_t bx_write_noc_hop_coeff;
+    uint64_t bx_ifetch_noc_hop_coeff;
+    uint64_t bx_instruction_u_coeff;
+    uint64_t bx_instruction_k_coeff;
 } core_meta_info_t;
 
-/* Check if model is constant type (bx_instruction_coeff=1000, others=0) */
+/* Check if model is constant type */
 static inline bool core_model_is_constant(const core_meta_info_t *info) {
-    return (info->bx_instruction_coeff == 1000 &&
-            info->bx_instruction_access_coeff == 0 &&
-            info->bx_data_access_coeff == 0 &&
-            info->bx_private_icache_miss_coeff == 0 &&
-            info->bx_private_dcache_miss_coeff == 0 &&
-            info->bx_shared_cache_miss_coeff == 0 &&
-            info->bx_branch_count_coeff == 0 &&
-            info->bx_bp_miss_coeff == 0 &&
-            info->bx_tlb_miss_coeff == 0);
+    return info->is_constant;
 }
 
 void tcg_cpus_destroy(CPUState *cpu);
