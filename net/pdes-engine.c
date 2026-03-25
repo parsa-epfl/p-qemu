@@ -271,7 +271,7 @@ void schedule_poll(void *opaque){
 void pdes_pause_bh(void *opaque){
     PDESEngine *engine = opaque;
 
-    vm_stop(RUN_STATE_SAVE_VM);
+    vm_stop(RUN_STATE_PAUSED);
     // Remove the bottom half
     qemu_bh_delete(engine->pause_bh);
     engine->pause_bh = NULL;
@@ -281,7 +281,6 @@ void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
     
 
-    engine->paused = true;
     // Create bh
     // Make sure bh is empty
     // assert(engine->pause_bh == NULL && "Pause BH is not NULL when trying to pause, this should not happen");
@@ -291,6 +290,10 @@ void pdes_pause(void *opaque){
     // qemu_system_vmstop_request_prepare();
     // qemu_system_vmstop_request(RUN_STATE_PAUSED);
 
+
+    engine->paused = true;
+
+
     assert(engine->pause_bh == NULL);
     engine->pause_bh = qemu_bh_new(pdes_pause_bh, engine);
     qemu_bh_schedule(engine->pause_bh);
@@ -298,17 +301,7 @@ void pdes_pause(void *opaque){
 
     
 
-    if (current_cpu == NULL){
-        // This can happen if we call pause before the CPU is created, in that case we just return and do nothing as there is nothing to pause yet
-        // printf("pdes_pause called but current_cpu is NULL, this can happen if pause is called before CPU is created, just returning without pausing.\n");
-        return;
-    }
     
-
-    current_cpu->stop = true;
-    cpu_exit(current_cpu);
-
-
 
     return;
 }
@@ -317,15 +310,17 @@ void pdes_pause(void *opaque){
 void pdes_play(void *opaque){
     // TODO add doc where this can be called from (not virt)
     PDESEngine *engine = opaque;
-    engine->paused = false;
     // Create bh
     // Make sure bh is empty
     // assert(engine->pause_bh == NULL && "Pause BH is not NULL when trying to play, this should not happen");
     // engine->pause_bh = qemu_bh_new(play_bh, engine);
     // qemu_bh_schedule(engine->pause_bh);
     vm_start();
+    
+    engine->paused = false;
     return;
 }
+
 
 
 int pdes_drain(PDESEngine *engine, char * snapshot_name, SnapshotFormat format) {
