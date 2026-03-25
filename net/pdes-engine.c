@@ -276,7 +276,7 @@ void pdes_pause_bh(void *opaque){
     qemu_bh_delete(engine->pause_bh);
     engine->pause_bh = NULL;
 }
-
+CPUState *paused_cpu = NULL; 
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
     
@@ -299,7 +299,14 @@ void pdes_pause(void *opaque){
     qemu_bh_schedule(engine->pause_bh);
 
 
+    if (current_cpu != NULL){
+        paused_cpu = current_cpu;
+        current_cpu->stop = true;
+        // cpu_exit(current_cpu);
+    }
     
+
+
 
     
 
@@ -315,6 +322,10 @@ void pdes_play(void *opaque){
     // assert(engine->pause_bh == NULL && "Pause BH is not NULL when trying to play, this should not happen");
     // engine->pause_bh = qemu_bh_new(play_bh, engine);
     // qemu_bh_schedule(engine->pause_bh);
+    if (paused_cpu != NULL){
+        paused_cpu->stop = false;
+        paused_cpu = NULL;
+    }
     vm_start();
     
     engine->paused = false;

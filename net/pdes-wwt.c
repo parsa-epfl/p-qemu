@@ -402,10 +402,10 @@ void wwt_sync_check(){
         int64_t next_quantum_time_local = next_quantum_time + wwt_engine->engine->first_sync_virtual_time;
         timer_mod(wwt_engine->quantum_timer, next_quantum_time_local);
         // call play to resume
+        // printf("===================WWT: Finished quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round - 1, current_time, get_universal_virtual_time(wwt_engine->engine));
         if(wwt_engine->should_sync){
             pdes_play(wwt_engine->engine);
         }
-        // printf("===================WWT: Finished quantum %lu at virtual time %lu ns and universal time %lu ns.===================\n", wwt_engine->current_quantum_round - 1, current_time, get_universal_virtual_time(wwt_engine->engine));
     }
 }
 
@@ -415,6 +415,9 @@ void quanta_sync(PDESWWT *wwt_engine){
     wwt_engine->finished_quantum = true;
     // printf("WWT: Sent sync for quantum %lu at virtual time %lu ns and universal time %lu ns.\n", wwt_engine->current_quantum_round, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), get_universal_virtual_time(wwt_engine->engine));
 
+    if(wwt_engine->should_sync){
+        pdes_pause(wwt_engine->engine);
+    }
     // same using is_waiting_for_quanta as setup, as its the same logic
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     time_test = current_time;
@@ -438,9 +441,7 @@ void quanta_sync(PDESWWT *wwt_engine){
     //     }
     // }
     // Pause any progress before we decide if we need to send in sync and other communications
-    if(wwt_engine->should_sync){
-        pdes_pause(wwt_engine->engine);
-    }
+    
     // TODO DOCUMENT THIS MORE: for any operation between nodes that can have potential race conditions, it should be done after pause (to prevent race in node) but before send synnc (to prevent race in the other node)
     // TODO add a lock to engine and everything that needs it. notify neighbor is a good example
     pdes_engine_poll(wwt_engine->engine);
