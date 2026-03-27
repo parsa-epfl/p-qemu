@@ -276,6 +276,7 @@ void pdes_pause_bh(void *opaque){
     qemu_bh_delete(engine->pause_bh);
     engine->pause_bh = NULL;
 }
+// TODO this relies on being on main thread always, add some safeguards for this
 CPUState *paused_cpu = NULL; 
 void pdes_pause(void *opaque){
     PDESEngine *engine = opaque;
