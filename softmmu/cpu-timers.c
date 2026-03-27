@@ -159,6 +159,7 @@ void cpu_disable_ticks(void)
         }
 
         if (quantum_enabled()) {
+            timers_state.virtual_clock_snapshot += timers_state.quantum_set_time;
             timers_state.quantum_set_time = 0;
         }
 
