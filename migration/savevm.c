@@ -3878,15 +3878,33 @@ bool load_snapshot(const char *name, const char *vmstate,
             }
             main_ram->on_demand_index = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
 
-            uint64_t _current_index = 0;
 
             deserialize_incremental_loc_file(
                 loc_file_fd,
                 main_ram->on_demand_file_name,
                 256,
-                &_current_index,
+                &incremental_snapshot_context.index,
                 main_ram->on_demand_index
             );
+
+            // copy on_demand_file_name to incremental_snapshot_context.base_name for later use (if needed).
+            strncpy(incremental_snapshot_context.base_name, main_ram->on_demand_file_name, sizeof(incremental_snapshot_context.base_name) - 1);
+
+            // Increase the index for the next incremental snapshot, since the current one is already loaded.
+            incremental_snapshot_context.index += 1;
+
+            // copy the main_ram->on_demand_index to incremental_snapshot_context.page_location for later use (if needed).
+            if (incremental_snapshot_context.page_location != NULL) {
+                g_hash_table_destroy(incremental_snapshot_context.page_location);
+            }
+
+            incremental_snapshot_context.page_location = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
+            GHashTableIter iter;
+            gpointer key, value;
+            g_hash_table_iter_init(&iter, main_ram->on_demand_index);
+            while (g_hash_table_iter_next(&iter, &key, &value)) {
+                g_hash_table_insert(incremental_snapshot_context.page_location, key, value);
+            }
 
             fclose(loc_file_fd);
         } else {
