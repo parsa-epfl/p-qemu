@@ -338,6 +338,11 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             if (!cpu->stopped) {
                 all_cpu_stopped = false;
             }
+
+            // Well, the rest of the picosecond budget is basically the idle time.
+            if (cpu->quantum_budget_in_picosecond > 0) {
+                record_statistics_to_plugin(cpu->cpu_index, 4, cpu->quantum_budget_in_picosecond / 1000);
+            }
         }
 
         /* Clear current CPU indicator */

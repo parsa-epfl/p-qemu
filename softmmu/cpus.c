@@ -462,6 +462,8 @@ void qemu_wait_io_event(CPUState *cpu)
             // CPU is running normally (not being asked to stop).
             bool affiliated_with_quantum = cpu->ip100ns != 0 && quantum_enabled();
             if (affiliated_with_quantum) {
+                // record the idle time.
+                record_statistics_to_plugin(cpu->cpu_index, 4, cpu->quantum_budget_in_picosecond / 1000);
                 cpu->quantum_budget_depleted = 1;
                 break; // we need to break in order to wait for the barrier.
             } else {
