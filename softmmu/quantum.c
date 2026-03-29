@@ -7,7 +7,6 @@ uint64_t quantum_size = 0;
 uint64_t quantum_check_threshold = 0;
 bool quantum_allow_interrupt_wakeup_inside = 0; // allow interrupts and other `run_on_cpu` to wake up a thread that spins on the quantum barrier.
 bool quantum_rr_mode = false; // Enable quantum-rr mode (single-threaded with quantum)
-bool quantum_esesc_mode = false; // Enable ESESC mode (alternating normal/follow stages)
 static uint64_t quantum_enabled_lower_bound = 0;
 static uint64_t quantum_enabled_upper_bound = 0;
 
@@ -39,7 +38,6 @@ void quantum_configure(QemuOpts *opts, Error **errp) {
 
     quantum_allow_interrupt_wakeup_inside = qemu_opt_get_bool(opts, "allow_interrupt_wakeup_inside", false);
     quantum_rr_mode = qemu_opt_get_bool(opts, "rr", false);
-    quantum_esesc_mode = qemu_opt_get_bool(opts, "esesc", false);
 
     // make it as a global value.
     quantum_size = quantum_size_tmp;

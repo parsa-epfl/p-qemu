@@ -43,7 +43,6 @@
 
 #include "qemu/dynamic_barrier.h"
 #include "sysemu/quantum.h"
-#include "esesc.h"
 #include <bits/time.h>
 #include <stdio.h>
 
@@ -216,9 +215,6 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu->last_tb_instruction_count_for_quantum = 0;
     cpu->quantum_budget_depleted = 0;
 
-    /* Initialise ESESC per-CPU state (no-op when ESESC is not enabled). */
-    esesc_init_cpu(cpu);
-
     qemu_log("======================================\n");
     qemu_log("Core%u Quantum Count: %lu ns.\n", cpu->cpu_index, quantum_size);
     // print coefficients
@@ -285,8 +281,6 @@ continue_to_run:
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_generation += 1;
-                        /* Check ESESC stage transition before replenishing. */
-                        esesc_check_cpu_stage_transition(cpu);
                         /* Budget is always one quantum of simulated time in ps. */
                         cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
@@ -356,8 +350,6 @@ continue_to_run:
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
                         cpu->quantum_generation += 1;
-                        /* Check ESESC stage transition before replenishing. */
-                        esesc_check_cpu_stage_transition(cpu);
                         /* Budget is always one quantum of simulated time in ps. */
                         cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
@@ -426,8 +418,6 @@ continue_to_run:
                     }
 
                     cpu->quantum_generation += 1;
-                    /* Check ESESC stage transition before replenishing. */
-                    esesc_check_cpu_stage_transition(cpu);
                     /* Budget is always one quantum of simulated time in ps. */
                     cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                     cpu->touched_timer_during_last_quantum = 0;

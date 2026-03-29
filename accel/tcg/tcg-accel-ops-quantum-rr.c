@@ -31,7 +31,6 @@
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-quantum-rr.h"
 #include "hw/core/cpu.h"
-#include "esesc.h"
 
 
 /* Current CPU being executed (for debugging/monitoring) */
@@ -170,18 +169,9 @@ static void quantum_rr_replenish_budgets(void)
 
     CPU_FOREACH(cpu) {
         /*
-         * Advance the per-CPU quantum generation counter.  In RR mode there
-         * is no barrier, so we use this as a simple round counter that the
-         * ESESC stage-transition logic can compare against.
+         * Advance the per-CPU quantum generation counter.
          */
         cpu->quantum_generation++;
-
-        /*
-         * Check whether this CPU should switch from ESESC normal → follow
-         * mode.  Must happen after quantum_generation is incremented and
-         * before the budget is replenished so the correct rate is used.
-         */
-        esesc_check_cpu_stage_transition(cpu);
 
         /*
          * Replenish the quantum budget.  The budget is always one quantum of
@@ -284,8 +274,6 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             cpu->quantum_generation = 0;
             cpu->quantum_budget_depleted = 0;
 
-            /* Initialise ESESC per-CPU state (no-op when ESESC is not enabled). */
-            esesc_init_cpu(cpu);
         }
     }
 
@@ -364,12 +352,6 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             if (quantum_check_threshold != 0 && cycle >= next_check_threshold) {
                 if (pf_periodic_check_cb) {
                     if (pf_periodic_check_cb(quantum_check_threshold)) {
-                        /*
-                         * Checkpoint requested: transition all CPUs from ESESC
-                         * follow mode back to normal mode before the snapshot.
-                         */
-                        esesc_reset_all_cpus_to_normal();
-
                         qemu_notify_event();
                         qemu_mutex_unlock_iothread();
                         while (!all_cpu_has_stop_request()) {
