@@ -141,35 +141,13 @@ static void *mttcg_cpu_thread_fn(void *arg)
 
     // Copy core info from table to CPUState
     cpu->ip100ns = (uint64_t)(core_info_table[cpu->cpu_index].ipns * 100);
-    cpu->bx_private_icache_miss_coeff           = core_info_table[cpu->cpu_index].bx_private_icache_miss_coeff;
-    cpu->bx_private_dcache_miss_load_ptw_coeff  = core_info_table[cpu->cpu_index].bx_private_dcache_miss_load_ptw_coeff;
-    cpu->bx_private_dcache_miss_store_coeff     = core_info_table[cpu->cpu_index].bx_private_dcache_miss_store_coeff;
-    cpu->bx_shared_cache_miss_coeff             = core_info_table[cpu->cpu_index].bx_shared_cache_miss_coeff;
-    cpu->bx_bp_miss_coeff                       = core_info_table[cpu->cpu_index].bx_bp_miss_coeff;
-    cpu->bx_drain_pipeline_coeff                = core_info_table[cpu->cpu_index].bx_drain_pipeline_coeff;
-    cpu->bx_drain_store_buffer_coeff            = core_info_table[cpu->cpu_index].bx_drain_store_buffer_coeff;
-    cpu->bx_read_noc_hop_coeff                  = core_info_table[cpu->cpu_index].bx_read_noc_hop_coeff;
-    cpu->bx_write_noc_hop_coeff                 = core_info_table[cpu->cpu_index].bx_write_noc_hop_coeff;
-    cpu->bx_ifetch_noc_hop_coeff                = core_info_table[cpu->cpu_index].bx_ifetch_noc_hop_coeff;
-    cpu->bx_instruction_u_coeff                 = core_info_table[cpu->cpu_index].bx_instruction_u_coeff;
-    cpu->bx_instruction_k_coeff                 = core_info_table[cpu->cpu_index].bx_instruction_k_coeff;
+    cpu->active_coeffs = core_info_table[cpu->cpu_index].coeffs;
 
     /* Record whether this is an ipc-model core (enables ASID switching). */
     cpu->is_ipc_model = !core_model_is_constant(&core_info_table[cpu->cpu_index]);
 
     /* Save defaults so the TTBR handler can fall back to them. */
-    cpu->default_bx_private_icache_miss_coeff           = cpu->bx_private_icache_miss_coeff;
-    cpu->default_bx_private_dcache_miss_load_ptw_coeff  = cpu->bx_private_dcache_miss_load_ptw_coeff;
-    cpu->default_bx_private_dcache_miss_store_coeff     = cpu->bx_private_dcache_miss_store_coeff;
-    cpu->default_bx_shared_cache_miss_coeff             = cpu->bx_shared_cache_miss_coeff;
-    cpu->default_bx_bp_miss_coeff                       = cpu->bx_bp_miss_coeff;
-    cpu->default_bx_drain_pipeline_coeff                = cpu->bx_drain_pipeline_coeff;
-    cpu->default_bx_drain_store_buffer_coeff            = cpu->bx_drain_store_buffer_coeff;
-    cpu->default_bx_read_noc_hop_coeff                  = cpu->bx_read_noc_hop_coeff;
-    cpu->default_bx_write_noc_hop_coeff                 = cpu->bx_write_noc_hop_coeff;
-    cpu->default_bx_ifetch_noc_hop_coeff                = cpu->bx_ifetch_noc_hop_coeff;
-    cpu->default_bx_instruction_u_coeff                 = cpu->bx_instruction_u_coeff;
-    cpu->default_bx_instruction_k_coeff                 = cpu->bx_instruction_k_coeff;
+    cpu->default_coeffs = cpu->active_coeffs;
 
     assert(tcg_enabled());
     g_assert(!icount_enabled());
@@ -218,18 +196,18 @@ static void *mttcg_cpu_thread_fn(void *arg)
     qemu_log("======================================\n");
     qemu_log("Core%u Quantum Count: %lu ns.\n", cpu->cpu_index, quantum_size);
     // print coefficients
-    qemu_log("Core%u bx_private_icache_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_private_icache_miss_coeff);
-    qemu_log("Core%u bx_private_dcache_miss_load_ptw_coeff: %lu\n", cpu->cpu_index, cpu->bx_private_dcache_miss_load_ptw_coeff);
-    qemu_log("Core%u bx_private_dcache_miss_store_coeff: %lu\n", cpu->cpu_index, cpu->bx_private_dcache_miss_store_coeff);
-    qemu_log("Core%u bx_shared_cache_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_shared_cache_miss_coeff);
-    qemu_log("Core%u bx_bp_miss_coeff: %lu\n", cpu->cpu_index, cpu->bx_bp_miss_coeff);
-    qemu_log("Core%u bx_drain_pipeline_coeff: %lu\n", cpu->cpu_index, cpu->bx_drain_pipeline_coeff);
-    qemu_log("Core%u bx_drain_store_buffer_coeff: %lu\n", cpu->cpu_index, cpu->bx_drain_store_buffer_coeff);
-    qemu_log("Core%u bx_read_noc_hop_coeff: %lu\n", cpu->cpu_index, cpu->bx_read_noc_hop_coeff);
-    qemu_log("Core%u bx_write_noc_hop_coeff: %lu\n", cpu->cpu_index, cpu->bx_write_noc_hop_coeff);
-    qemu_log("Core%u bx_ifetch_noc_hop_coeff: %lu\n", cpu->cpu_index, cpu->bx_ifetch_noc_hop_coeff);
-    qemu_log("Core%u bx_instruction_u_coeff: %lu\n", cpu->cpu_index, cpu->bx_instruction_u_coeff);
-    qemu_log("Core%u bx_instruction_k_coeff: %lu\n", cpu->cpu_index, cpu->bx_instruction_k_coeff);
+    qemu_log("Core%u bx_private_icache_miss_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_private_icache_miss_coeff);
+    qemu_log("Core%u bx_private_dcache_miss_load_ptw_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_private_dcache_miss_load_ptw_coeff);
+    qemu_log("Core%u bx_private_dcache_miss_store_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_private_dcache_miss_store_coeff);
+    qemu_log("Core%u bx_shared_cache_miss_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_shared_cache_miss_coeff);
+    qemu_log("Core%u bx_bp_miss_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_bp_miss_coeff);
+    qemu_log("Core%u bx_drain_pipeline_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_drain_pipeline_coeff);
+    qemu_log("Core%u bx_drain_store_buffer_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_drain_store_buffer_coeff);
+    qemu_log("Core%u bx_read_noc_hop_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_read_noc_hop_coeff);
+    qemu_log("Core%u bx_write_noc_hop_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_write_noc_hop_coeff);
+    qemu_log("Core%u bx_ifetch_noc_hop_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_ifetch_noc_hop_coeff);
+    qemu_log("Core%u bx_instruction_u_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_instruction_u_coeff);
+    qemu_log("Core%u bx_instruction_k_coeff: %"PRIu32"\n", cpu->cpu_index, cpu->active_coeffs.bx_instruction_k_coeff);
     qemu_log("======================================\n");
 
 

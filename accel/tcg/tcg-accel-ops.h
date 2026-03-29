@@ -13,25 +13,14 @@
 #define TCG_ACCEL_OPS_H
 
 #include "sysemu/cpus.h"
+#include "sysemu/asid-coeff.h"
 
 /* Core metadata information from core_info.csv */
 typedef struct core_meta_info_t {
     int64_t host_core_idx;  // Host CPU core for affinity
     double ipns;
     bool is_constant;       // true if model_type == "constant"
-    // Coefficients are stored as fixed-point (value * 1000 for 3 decimal places)
-    uint64_t bx_private_icache_miss_coeff;
-    uint64_t bx_private_dcache_miss_load_ptw_coeff;
-    uint64_t bx_private_dcache_miss_store_coeff;
-    uint64_t bx_shared_cache_miss_coeff;
-    uint64_t bx_bp_miss_coeff;
-    uint64_t bx_drain_pipeline_coeff;
-    uint64_t bx_drain_store_buffer_coeff;
-    uint64_t bx_read_noc_hop_coeff;
-    uint64_t bx_write_noc_hop_coeff;
-    uint64_t bx_ifetch_noc_hop_coeff;
-    uint64_t bx_instruction_u_coeff;
-    uint64_t bx_instruction_k_coeff;
+    bx_coeff_t coeffs;      // IPC model coefficients (fixed-point: value * 1000)
 } core_meta_info_t;
 
 /* Check if model is constant type */

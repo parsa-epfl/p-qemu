@@ -15,7 +15,7 @@
  * quantum_flush_current_stats - deduct accumulated stats into the quantum budget.
  *
  * Computes required_picoseconds from the current plugin-exposed statistics
- * using the core's bx_* coefficients, zeroes the statistics, updates
+ * using the core's active_coeffs, zeroes the statistics, updates
  * target_cycle_on_instruction and cpu_virtual_time[].vts, and subtracts
  * from quantum_budget_in_picosecond.
  *
@@ -25,6 +25,9 @@
  * Safe to call from translated-code context (e.g. TTBR write handlers) where
  * current_cpu is valid.  Uses the passed @cpu parameter throughout.
  */
+#ifdef CONFIG_AVX2_OPT
+__attribute__((target("avx2")))
+#endif
 void quantum_flush_current_stats(CPUState *cpu)
 {
     if (!quantum_enabled() || cpu->ip100ns == 0) {
@@ -41,18 +44,11 @@ void quantum_flush_current_stats(CPUState *cpu)
         struct qemu_plugin_exposed_statistics *this_core_info =
             &g_exposed_statistics[cpu->cpu_index];
 
-        required_picoseconds += this_core_info->private_icache_miss * cpu->bx_private_icache_miss_coeff;
-        required_picoseconds += this_core_info->private_dcache_miss_load_ptw * cpu->bx_private_dcache_miss_load_ptw_coeff;
-        required_picoseconds += this_core_info->private_dcache_miss_store * cpu->bx_private_dcache_miss_store_coeff;
-        required_picoseconds += this_core_info->shared_cache_miss * cpu->bx_shared_cache_miss_coeff;
-        required_picoseconds += this_core_info->bp_miss * cpu->bx_bp_miss_coeff;
-        required_picoseconds += this_core_info->drain_pipeline * cpu->bx_drain_pipeline_coeff;
-        required_picoseconds += this_core_info->drain_store_buffer * cpu->bx_drain_store_buffer_coeff;
-        required_picoseconds += this_core_info->read_noc_hop * cpu->bx_read_noc_hop_coeff;
-        required_picoseconds += this_core_info->write_noc_hop * cpu->bx_write_noc_hop_coeff;
-        required_picoseconds += this_core_info->ifetch_noc_hop * cpu->bx_ifetch_noc_hop_coeff;
-        required_picoseconds += this_core_info->instruction_u * cpu->bx_instruction_u_coeff;
-        required_picoseconds += this_core_info->instruction_k * cpu->bx_instruction_k_coeff;
+        const uint32_t *stats  = this_core_info->arr;
+        const uint32_t *coeffs = cpu->active_coeffs.arr;
+        for (int i = 0; i < 12; i++) {
+            required_picoseconds += (uint64_t)stats[i] * coeffs[i];
+        }
 
         /* Reset statistics so they are not counted again. */
         memset(this_core_info, 0, sizeof(*this_core_info));

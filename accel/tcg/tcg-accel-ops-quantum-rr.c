@@ -241,33 +241,11 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             cpu->ip100ns = (uint64_t)(quantum_rr_core_info_table[cpu->cpu_index].ipns * 100);
             assert(cpu->ip100ns > 0 && "CPU must have valid IPC from core_info.csv");
 
-            cpu->bx_private_icache_miss_coeff           = quantum_rr_core_info_table[cpu->cpu_index].bx_private_icache_miss_coeff;
-            cpu->bx_private_dcache_miss_load_ptw_coeff  = quantum_rr_core_info_table[cpu->cpu_index].bx_private_dcache_miss_load_ptw_coeff;
-            cpu->bx_private_dcache_miss_store_coeff     = quantum_rr_core_info_table[cpu->cpu_index].bx_private_dcache_miss_store_coeff;
-            cpu->bx_shared_cache_miss_coeff             = quantum_rr_core_info_table[cpu->cpu_index].bx_shared_cache_miss_coeff;
-            cpu->bx_bp_miss_coeff                       = quantum_rr_core_info_table[cpu->cpu_index].bx_bp_miss_coeff;
-            cpu->bx_drain_pipeline_coeff                = quantum_rr_core_info_table[cpu->cpu_index].bx_drain_pipeline_coeff;
-            cpu->bx_drain_store_buffer_coeff            = quantum_rr_core_info_table[cpu->cpu_index].bx_drain_store_buffer_coeff;
-            cpu->bx_read_noc_hop_coeff                  = quantum_rr_core_info_table[cpu->cpu_index].bx_read_noc_hop_coeff;
-            cpu->bx_write_noc_hop_coeff                 = quantum_rr_core_info_table[cpu->cpu_index].bx_write_noc_hop_coeff;
-            cpu->bx_ifetch_noc_hop_coeff                = quantum_rr_core_info_table[cpu->cpu_index].bx_ifetch_noc_hop_coeff;
-            cpu->bx_instruction_u_coeff                 = quantum_rr_core_info_table[cpu->cpu_index].bx_instruction_u_coeff;
-            cpu->bx_instruction_k_coeff                 = quantum_rr_core_info_table[cpu->cpu_index].bx_instruction_k_coeff;
+            cpu->active_coeffs = quantum_rr_core_info_table[cpu->cpu_index].coeffs;
 
             cpu->is_ipc_model = !core_model_is_constant(&quantum_rr_core_info_table[cpu->cpu_index]);
 
-            cpu->default_bx_private_icache_miss_coeff           = cpu->bx_private_icache_miss_coeff;
-            cpu->default_bx_private_dcache_miss_load_ptw_coeff  = cpu->bx_private_dcache_miss_load_ptw_coeff;
-            cpu->default_bx_private_dcache_miss_store_coeff     = cpu->bx_private_dcache_miss_store_coeff;
-            cpu->default_bx_shared_cache_miss_coeff             = cpu->bx_shared_cache_miss_coeff;
-            cpu->default_bx_bp_miss_coeff                       = cpu->bx_bp_miss_coeff;
-            cpu->default_bx_drain_pipeline_coeff                = cpu->bx_drain_pipeline_coeff;
-            cpu->default_bx_drain_store_buffer_coeff            = cpu->bx_drain_store_buffer_coeff;
-            cpu->default_bx_read_noc_hop_coeff                  = cpu->bx_read_noc_hop_coeff;
-            cpu->default_bx_write_noc_hop_coeff                 = cpu->bx_write_noc_hop_coeff;
-            cpu->default_bx_ifetch_noc_hop_coeff                = cpu->bx_ifetch_noc_hop_coeff;
-            cpu->default_bx_instruction_u_coeff                 = cpu->bx_instruction_u_coeff;
-            cpu->default_bx_instruction_k_coeff                 = cpu->bx_instruction_k_coeff;
+            cpu->default_coeffs = cpu->active_coeffs;
 
             /* Initialize quantum tracking */
             cpu->last_tb_instruction_count_for_quantum = 0;

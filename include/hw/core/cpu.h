@@ -32,6 +32,7 @@
 #include "qemu/thread.h"
 #include "qemu/plugin-event.h"
 #include "qom/object.h"
+#include "sysemu/asid-coeff.h"
 
 typedef int (*WriteCoreDumpFunction)(const void *buf, size_t size,
                                      void *opaque);
@@ -460,37 +461,16 @@ struct CPUState {
      */
     bool is_ipc_model;
 
-    // IPC model coefficients (fixed-point: value * 1000 for 3 decimal places)
-    // These are the *active* coefficients and may be overridden by ASID lookup.
-    uint64_t bx_private_icache_miss_coeff;
-    uint64_t bx_private_dcache_miss_load_ptw_coeff;
-    uint64_t bx_private_dcache_miss_store_coeff;
-    uint64_t bx_shared_cache_miss_coeff;
-    uint64_t bx_bp_miss_coeff;
-    uint64_t bx_drain_pipeline_coeff;
-    uint64_t bx_drain_store_buffer_coeff;
-    uint64_t bx_read_noc_hop_coeff;
-    uint64_t bx_write_noc_hop_coeff;
-    uint64_t bx_ifetch_noc_hop_coeff;
-    uint64_t bx_instruction_u_coeff;
-    uint64_t bx_instruction_k_coeff;
+    /* Active IPC model coefficients (fixed-point: value * 1000).
+     * May be overridden per-ASID by the TTBR write handler.
+     * Aligned to 64 bytes so the hot loop in quantum_flush_current_stats
+     * fits in one cache line and the arr[] view can be loaded with a
+     * single aligned vector load. */
+    bx_coeff_t active_coeffs __attribute__((aligned(64)));
 
-    /*
-     * Default (core_info.csv) coefficients — used as fallback when the
-     * current ASID is not found in the global ASID coefficient table.
-     */
-    uint64_t default_bx_private_icache_miss_coeff;
-    uint64_t default_bx_private_dcache_miss_load_ptw_coeff;
-    uint64_t default_bx_private_dcache_miss_store_coeff;
-    uint64_t default_bx_shared_cache_miss_coeff;
-    uint64_t default_bx_bp_miss_coeff;
-    uint64_t default_bx_drain_pipeline_coeff;
-    uint64_t default_bx_drain_store_buffer_coeff;
-    uint64_t default_bx_read_noc_hop_coeff;
-    uint64_t default_bx_write_noc_hop_coeff;
-    uint64_t default_bx_ifetch_noc_hop_coeff;
-    uint64_t default_bx_instruction_u_coeff;
-    uint64_t default_bx_instruction_k_coeff;
+    /* Default coefficients from core_info.csv; restored when an ASID is
+     * not found in the global ASID coefficient table. */
+    bx_coeff_t default_coeffs;
 
     int64_t quantum_budget_in_picosecond;
     uint64_t quantum_generation;

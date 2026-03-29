@@ -4216,32 +4216,10 @@ static void vmsa_ttbr_write(CPUARMState *env, const ARMCPRegInfo *ri,
         : NULL;
 
     if (coeffs) {
-        cs->bx_private_icache_miss_coeff           = coeffs->bx_private_icache_miss_coeff;
-        cs->bx_private_dcache_miss_load_ptw_coeff  = coeffs->bx_private_dcache_miss_load_ptw_coeff;
-        cs->bx_private_dcache_miss_store_coeff     = coeffs->bx_private_dcache_miss_store_coeff;
-        cs->bx_shared_cache_miss_coeff             = coeffs->bx_shared_cache_miss_coeff;
-        cs->bx_bp_miss_coeff                       = coeffs->bx_bp_miss_coeff;
-        cs->bx_drain_pipeline_coeff                = coeffs->bx_drain_pipeline_coeff;
-        cs->bx_drain_store_buffer_coeff            = coeffs->bx_drain_store_buffer_coeff;
-        cs->bx_read_noc_hop_coeff                  = coeffs->bx_read_noc_hop_coeff;
-        cs->bx_write_noc_hop_coeff                 = coeffs->bx_write_noc_hop_coeff;
-        cs->bx_ifetch_noc_hop_coeff                = coeffs->bx_ifetch_noc_hop_coeff;
-        cs->bx_instruction_u_coeff                 = coeffs->bx_instruction_u_coeff;
-        cs->bx_instruction_k_coeff                 = coeffs->bx_instruction_k_coeff;
+        cs->active_coeffs = *coeffs;
     } else {
         /* ASID not found — fall back to the per-core defaults. */
-        cs->bx_private_icache_miss_coeff           = cs->default_bx_private_icache_miss_coeff;
-        cs->bx_private_dcache_miss_load_ptw_coeff  = cs->default_bx_private_dcache_miss_load_ptw_coeff;
-        cs->bx_private_dcache_miss_store_coeff     = cs->default_bx_private_dcache_miss_store_coeff;
-        cs->bx_shared_cache_miss_coeff             = cs->default_bx_shared_cache_miss_coeff;
-        cs->bx_bp_miss_coeff                       = cs->default_bx_bp_miss_coeff;
-        cs->bx_drain_pipeline_coeff                = cs->default_bx_drain_pipeline_coeff;
-        cs->bx_drain_store_buffer_coeff            = cs->default_bx_drain_store_buffer_coeff;
-        cs->bx_read_noc_hop_coeff                  = cs->default_bx_read_noc_hop_coeff;
-        cs->bx_write_noc_hop_coeff                 = cs->default_bx_write_noc_hop_coeff;
-        cs->bx_ifetch_noc_hop_coeff                = cs->default_bx_ifetch_noc_hop_coeff;
-        cs->bx_instruction_u_coeff                 = cs->default_bx_instruction_u_coeff;
-        cs->bx_instruction_k_coeff                 = cs->default_bx_instruction_k_coeff;
+        cs->active_coeffs = cs->default_coeffs;
     }
 }
 

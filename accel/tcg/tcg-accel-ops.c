@@ -256,18 +256,7 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
         core_info_table[i].host_core_idx = i;
         core_info_table[i].ipns = 0.0;
         core_info_table[i].is_constant = false;
-        core_info_table[i].bx_private_icache_miss_coeff = 0;
-        core_info_table[i].bx_private_dcache_miss_load_ptw_coeff = 0;
-        core_info_table[i].bx_private_dcache_miss_store_coeff = 0;
-        core_info_table[i].bx_shared_cache_miss_coeff = 0;
-        core_info_table[i].bx_bp_miss_coeff = 0;
-        core_info_table[i].bx_drain_pipeline_coeff = 0;
-        core_info_table[i].bx_drain_store_buffer_coeff = 0;
-        core_info_table[i].bx_read_noc_hop_coeff = 0;
-        core_info_table[i].bx_write_noc_hop_coeff = 0;
-        core_info_table[i].bx_ifetch_noc_hop_coeff = 0;
-        core_info_table[i].bx_instruction_u_coeff = 0;
-        core_info_table[i].bx_instruction_k_coeff = 0;
+        core_info_table[i].coeffs = (bx_coeff_t){0};
     }
 
     // Load the IPC from the file.
@@ -399,19 +388,19 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
                 "bx_instruction_u_coeff",
                 "bx_instruction_k_coeff"
             };
-            uint64_t *coeffs[] = {
-                &core_info_table[core_id].bx_private_icache_miss_coeff,
-                &core_info_table[core_id].bx_private_dcache_miss_load_ptw_coeff,
-                &core_info_table[core_id].bx_private_dcache_miss_store_coeff,
-                &core_info_table[core_id].bx_shared_cache_miss_coeff,
-                &core_info_table[core_id].bx_bp_miss_coeff,
-                &core_info_table[core_id].bx_drain_pipeline_coeff,
-                &core_info_table[core_id].bx_drain_store_buffer_coeff,
-                &core_info_table[core_id].bx_read_noc_hop_coeff,
-                &core_info_table[core_id].bx_write_noc_hop_coeff,
-                &core_info_table[core_id].bx_ifetch_noc_hop_coeff,
-                &core_info_table[core_id].bx_instruction_u_coeff,
-                &core_info_table[core_id].bx_instruction_k_coeff
+            uint32_t *coeffs[] = {
+                &core_info_table[core_id].coeffs.bx_private_icache_miss_coeff,
+                &core_info_table[core_id].coeffs.bx_private_dcache_miss_load_ptw_coeff,
+                &core_info_table[core_id].coeffs.bx_private_dcache_miss_store_coeff,
+                &core_info_table[core_id].coeffs.bx_shared_cache_miss_coeff,
+                &core_info_table[core_id].coeffs.bx_bp_miss_coeff,
+                &core_info_table[core_id].coeffs.bx_drain_pipeline_coeff,
+                &core_info_table[core_id].coeffs.bx_drain_store_buffer_coeff,
+                &core_info_table[core_id].coeffs.bx_read_noc_hop_coeff,
+                &core_info_table[core_id].coeffs.bx_write_noc_hop_coeff,
+                &core_info_table[core_id].coeffs.bx_ifetch_noc_hop_coeff,
+                &core_info_table[core_id].coeffs.bx_instruction_u_coeff,
+                &core_info_table[core_id].coeffs.bx_instruction_k_coeff
             };
 
             for (int i = 0; i < 12; i++) {
@@ -430,7 +419,14 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
                     exit(1);
                 }
                 // Convert to fixed-point: multiply by 1000 and round to nearest integer
-                *coeffs[i] = (uint64_t)(val * 1000.0 + 0.5);
+                uint64_t fixed = (uint64_t)(val * 1000.0 + 0.5);
+                if (fixed > UINT32_MAX) {
+                    fprintf(stderr, "Error: Row %d: %s value %f overflows uint32 in fixed-point\n",
+                            core_id, coeff_names[i], val);
+                    fclose(fp);
+                    exit(1);
+                }
+                *coeffs[i] = (uint32_t)fixed;
             }
         }
 
@@ -542,7 +538,7 @@ void tcg_parse_asid_info_file(const char *file_name)
             "bx_instruction_u_coeff",
             "bx_instruction_k_coeff"
         };
-        uint64_t *coeffs[] = {
+        uint32_t *coeffs[] = {
             &entry->bx_private_icache_miss_coeff,
             &entry->bx_private_dcache_miss_load_ptw_coeff,
             &entry->bx_private_dcache_miss_store_coeff,
@@ -577,7 +573,16 @@ void tcg_parse_asid_info_file(const char *file_name)
                 exit(1);
             }
             /* Fixed-point: multiply by 1000 and round */
-            *coeffs[i] = (uint64_t)(val * 1000.0 + 0.5);
+            uint64_t fixed = (uint64_t)(val * 1000.0 + 0.5);
+            if (fixed > UINT32_MAX) {
+                fprintf(stderr,
+                        "Error: asid_info.csv row %d: %s value %f overflows uint32 in fixed-point\n",
+                        row, coeff_names[i], val);
+                g_free(entry);
+                fclose(fp);
+                exit(1);
+            }
+            *coeffs[i] = (uint32_t)fixed;
         }
 
         g_hash_table_insert(asid_coeff_table,
