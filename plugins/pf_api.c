@@ -180,9 +180,9 @@ uint64_t qemu_plugin_get_quantum_size(void) {
   return 0;
 }
 
-void qemu_plugin_savevm(const char *name, qemu_plugin_snapshot_format_t format) {
+void qemu_plugin_savevm(const char *name, qemu_plugin_snapshot_format_t format, bool generate_gem5_chkpt) {
   Error *err = NULL;
-  save_snapshot(name, true, NULL, false, NULL, (SnapshotFormat)format, &err);
+  save_snapshot(name, true, NULL, false, NULL, (SnapshotFormat)format, generate_gem5_chkpt, &err);
 
   if (err) {
     error_reportf_err(err, "Error: ");

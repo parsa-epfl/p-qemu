@@ -33,6 +33,7 @@ typedef enum SnapshotFormat {
  * @has_devices: whether to use explicit device list
  * @devices: explicit device list to snapshot
  * @format: snapshot format
+ * @generate_gem5_chkpt: whether to generate gem5-compatible checkpoint files
  * @errp: pointer to error object
  * On success, return %true.
  * On failure, store an error through @errp and return %false.
@@ -41,6 +42,7 @@ bool save_snapshot(const char *name, bool overwrite,
                    const char *vmstate,
                    bool has_devices, strList *devices,
                    SnapshotFormat format,
+                   bool generate_gem5_chkpt,
                    Error **errp);
 
 /**

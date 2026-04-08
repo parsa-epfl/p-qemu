@@ -833,13 +833,13 @@ typedef enum qemu_plugin_snapshot_format_t {
 /**
  * qemu_plugin_savevm - save the VM state.
  * @name: the name of the snapshot.
- * @use_xdelta: whether to use xdelta to save the snapshot.
- * @xdelta_source_name: the name of the source snapshot when using xdelta. Can be null for other cases.
+ * @format: the snapshot format to use.
+ * @generate_gem5_chkpt: whether to generate gem5-compatible checkpoint files (.raw + .register.info).
  *
  * This function is a wrapper of the QEMU function `save_snapshot`.
  * It prints the error directly to the console.
  */
-PF_API void qemu_plugin_savevm(const char *name, qemu_plugin_snapshot_format_t format);
+PF_API void qemu_plugin_savevm(const char *name, qemu_plugin_snapshot_format_t format, bool generate_gem5_chkpt);
 
 PF_API typedef void (*qemu_plugin_event_loop_poll_cb_t)(void);
 

@@ -2979,7 +2979,8 @@ static struct {
 };
 
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
-                  bool has_devices, strList *devices, SnapshotFormat format, Error **errp)
+                  bool has_devices, strList *devices, SnapshotFormat format, 
+                  bool generate_gem5_chkpt, Error **errp)
 {
     BlockDriverState *bs;
     QEMUSnapshotInfo sn1, *sn = &sn1;
@@ -3265,6 +3266,55 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     }
 
     ret = 0;
+
+    /* Generate gem5-compatible checkpoint files if requested */
+    if (generate_gem5_chkpt) {
+        
+        /* Create output directory <snapshot_name>.gem */
+        char gem_dir[303];
+        snprintf(gem_dir, sizeof(gem_dir), "%s.gem", sn->name);
+        if (mkdir(gem_dir, 0755) < 0 && errno != EEXIST) {
+            error_setg(errp, "Could not create gem5 checkpoint directory: %s", gem_dir);
+            ret = -1;
+            goto the_end;
+        }
+
+        /* Dump raw main memory with timing */
+        {
+            int64_t time_start_ms = g_get_monotonic_time() / 1000;
+
+            char raw_memory_file[307];
+            snprintf(raw_memory_file, sizeof(raw_memory_file), "%s/system.physmem.store1.pmem", gem_dir);
+
+            QEMUFile *raw_file = qemu_file_open_output(raw_memory_file, errp);
+            if (!raw_file) {
+                error_setg(errp, "Could not create gem5 raw memory file");
+                ret = -1;
+                goto the_end;
+            }
+
+            struct RAMBlock *main_ram = get_main_memory();
+            if (!main_ram) {
+                error_setg(errp, "Could not find main memory block for gem5 checkpoint");
+                qemu_fclose(raw_file);
+                ret = -1;
+                goto the_end;
+            }
+
+            qemu_put_buffer(raw_file, main_ram->host, main_ram->used_length);
+            ret2 = qemu_fclose(raw_file);
+            if (ret2 < 0) {
+                error_setg(errp, "Could not close gem5 raw memory file");
+                ret = ret2;
+                goto the_end;
+            }
+            
+            int64_t time_end_ms = g_get_monotonic_time() / 1000;
+            int64_t elapsed_ms = time_end_ms - time_start_ms;
+            fprintf(stderr, "[gem5_chkpt] raw memory dump completed in %ld ms (%.2f seconds)\n", 
+                    elapsed_ms, (double)elapsed_ms / 1000.0);
+        }
+    }
 
  the_end:
     if (aio_context) {
@@ -4000,7 +4050,7 @@ static void snapshot_save_job_bh(void *opaque)
 
     job_progress_set_remaining(&s->common, 1);
     s->ret = save_snapshot(s->tag, false, s->vmstate,
-                           true, s->devices, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, s->errp);
+                           true, s->devices, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, false, s->errp);
     job_progress_update(&s->common, 1);
 
     qmp_snapshot_job_free(s);
