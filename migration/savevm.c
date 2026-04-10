@@ -3428,6 +3428,55 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
 
             fprintf(stderr, "[gem5_chkpt] register info dumped to %s (JSON format)\n", reg_file_name);
         }
+
+        // TODO: Do it the right way.
+        /* Dump VirtIO disk device info: exact same operations as
+            * dump_disk_dev_info() in create_snapshot.py.
+            *
+            * Step 1: xp /xw 0xa003e40
+            *   Read 32-bit PFN from the VIRTIO_MMIO_QUEUE_PFN register (physical
+            *   address 0xa003e40 = MMIO base 0xa003e00 + offset 0x040).  Using
+            *   cpu_physical_memory_read dispatches through the MMIO handler, exactly
+            *   as the "xp" monitor command does.
+            *
+            * Step 2: extract_addr -- take the value, shift left 12
+            *   vio_base = pfn << 12
+            *
+            * Step 3: xp /xw (vio_base + 0x4002)
+            *   Read 32-bit word from guest RAM at vio_base + 0x4002.
+            *   (vio_base + 0x4000 = vring_avail base; +2 = avail->idx field.)
+            *
+            * Step 4: extract_value -- mask lower 16 bits (OFFSET_MASK = (1<<16)-1)
+            *   queue0_offset = word & 0xFFFF
+            */
+        {
+            char dev_info_file[311];
+            snprintf(dev_info_file, sizeof(dev_info_file), "%s/dev.info", gem_dir);
+
+            /* Steps 1 & 2: read PFN from MMIO register, page-shift to get byte address */
+            uint32_t pfn = 0;
+            cpu_physical_memory_read(0xa003e40ULL, &pfn, sizeof(pfn));
+            pfn = le32_to_cpu(pfn);
+            hwaddr vio_base = (hwaddr)pfn << 12;
+
+            /* Steps 3 & 4: read 32-bit word from guest RAM, mask lower 16 bits */
+            uint32_t word = 0;
+            cpu_physical_memory_read(vio_base + 0x4002, &word, sizeof(word));
+            word = le32_to_cpu(word);
+            uint32_t queue0_offset = word & ((1u << 16) - 1);
+
+            FILE *dev_f = fopen(dev_info_file, "w");
+            if (!dev_f) {
+                error_setg(errp, "Could not create gem5 device info file: %s",
+                            dev_info_file);
+                ret = -1;
+                goto the_end;
+            }
+            fprintf(dev_f, "vio_base 0x%" PRIx64 "\n", (uint64_t)vio_base);
+            fprintf(dev_f, "queue0_offset %u\n", queue0_offset);
+            fclose(dev_f);
+            fprintf(stderr, "[gem5_chkpt] device info dumped to %s\n", dev_info_file);
+        }
     }
 
  the_end:
