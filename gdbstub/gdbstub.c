@@ -2219,3 +2219,163 @@ void gdb_create_default_process(GDBState *s)
     process->target_xml[0] = '\0';
 }
 
+
+/*
+ * gdb_resolve_xml - resolve an XML feature filename to its text content.
+ *
+ * Tries the CPU's dynamic XML callback first (for dynamically generated
+ * register descriptions like system-registers.xml), then falls back to the
+ * compiled-in xml_builtin table (for static XMLs like aarch64-core.xml).
+ */
+static const char *gdb_resolve_xml(CPUState *cpu, const char *xmlname)
+{
+    CPUClass *cc = CPU_GET_CLASS(cpu);
+
+    if (cc->gdb_get_dynamic_xml) {
+        const char *xml = cc->gdb_get_dynamic_xml(cpu, xmlname);
+        if (xml) {
+            return xml;
+        }
+    }
+    for (int i = 0; xml_builtin[i][0]; i++) {
+        if (strcmp(xml_builtin[i][0], xmlname) == 0) {
+            return xml_builtin[i][1];
+        }
+    }
+    return NULL;
+}
+
+/*
+ * xml_collect_reg_names - single pass over an XML feature blob.
+ *
+ * For every <reg name="..." [regnum="N"]> entry found, stores a g_strdup'd
+ * copy of the name into reg_names[global_regnum].  The caller is responsible
+ * for freeing each non-NULL entry (g_free).
+ *
+ * @xml:         the XML text (may be NULL, in which case this is a no-op)
+ * @base_regnum: starting register number for regs without an explicit
+ *               regnum= attribute (sequential from this value)
+ * @reg_names:   output array, pre-allocated to [total_regs], NULL-initialised
+ * @total_regs:  length of reg_names (bounds check)
+ */
+static void xml_collect_reg_names(const char *xml, int base_regnum,
+                                  char **reg_names, int total_regs)
+{
+    const char *p = xml;
+    int next_regnum = base_regnum;
+
+    if (!xml) {
+        return;
+    }
+
+    while ((p = strstr(p, "<reg ")) != NULL) {
+        p += 5;
+
+        /* Self-closing tags always end with "/>". */
+        const char *tag_end = strstr(p, "/>");
+        if (!tag_end) {
+            break;
+        }
+
+        int regnum = next_regnum;
+
+        /* Override with explicit regnum="N" when present. */
+        const char *rn = strstr(p, "regnum=\"");
+        if (rn && rn < tag_end) {
+            regnum = (int)strtol(rn + 8, NULL, 10);
+        }
+
+        /* Extract name="...". */
+        const char *na = strstr(p, "name=\"");
+        if (na && na < tag_end) {
+            na += 6;
+            const char *ne = memchr(na, '"', tag_end - na);
+            if (ne && regnum >= 0 && regnum < total_regs
+                && !reg_names[regnum]) {
+                reg_names[regnum] = g_strndup(na, ne - na);
+            }
+        }
+
+        next_regnum = regnum + 1;
+        p = tag_end + 2;
+    }
+}
+
+/*
+ * gdb_get_registers_qdict - get all CPU registers as a QDict (JSON object).
+ *
+ * Uses the same XML feature descriptions that GDB uses, so the register names
+ * and the complete set exactly match "info registers all".  Arch-agnostic:
+ * works for any CPU type that has GDB XML register descriptions.
+ *
+ * The VM must be stopped and cpu_synchronize_state() is called internally
+ * before reading any register value.
+ *
+ * Returns a QDict mapping register names to hex string values. Caller must unref.
+ * On error (no XML description), returns empty QDict.
+ *
+ * @cpu: the CPU whose registers to dump
+ */
+QDict *gdb_get_registers_qdict(CPUState *cpu)
+{
+    CPUClass *cc = CPU_GET_CLASS(cpu);
+    GDBRegisterState *r;
+    int total_regs, reg_id;
+    char **reg_names;
+    GByteArray *valbuf;
+    QDict *regs_dict = qdict_new();
+
+    if (!cc->gdb_core_xml_file) {
+        /* Return empty dict on error */
+        return regs_dict;
+    }
+
+    /* Flush hypervisor state into CPUState (no-op for TCG). */
+    cpu_synchronize_state(cpu);
+
+    total_regs = cpu->gdb_num_regs;
+    reg_names = g_new0(char *, total_regs);
+
+    /* Collect names from the core XML (registers 0..gdb_num_core_regs-1). */
+    xml_collect_reg_names(gdb_resolve_xml(cpu, cc->gdb_core_xml_file),
+                          0, reg_names, total_regs);
+
+    /* Collect names from every supplemental register set. */
+    for (r = cpu->gdb_regs; r; r = r->next) {
+        xml_collect_reg_names(gdb_resolve_xml(cpu, r->xml),
+                              r->base_reg, reg_names, total_regs);
+    }
+
+    /* Read each register that has a resolved name. */
+    valbuf = g_byte_array_new();
+    for (reg_id = 0; reg_id < total_regs; reg_id++) {
+        int rlen;
+
+        if (!reg_names[reg_id]) {
+            continue;
+        }
+
+        g_byte_array_set_size(valbuf, 0);
+        rlen = gdb_read_register(cpu, valbuf, reg_id);
+        if (rlen > 0) {
+            /*
+             * valbuf is in target byte order.  For little-endian targets
+             * (AArch64) bytes are LSB-first; print from the most-significant
+             * byte downwards so the output looks like a natural 0x... value.
+             */
+            GString *hex_str = g_string_new("0x");
+            for (int b = rlen - 1; b >= 0; b--) {
+                g_string_append_printf(hex_str, "%02x", valbuf->data[b]);
+            }
+            qdict_put_str(regs_dict, reg_names[reg_id], hex_str->str);
+            g_string_free(hex_str, true);
+        }
+
+        g_free(reg_names[reg_id]);
+    }
+
+    g_byte_array_free(valbuf, true);
+    g_free(reg_names);
+
+    return regs_dict;
+}

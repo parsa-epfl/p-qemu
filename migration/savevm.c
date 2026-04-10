@@ -28,6 +28,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/boards.h"
+#include "exec/cpu-common.h"
 #include "net/net.h"
 #include "migration.h"
 #include "migration/snapshot.h"
@@ -44,9 +45,13 @@
 #include "postcopy-ram.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-migration.h"
+#include "qapi/qapi-commands-dump.h"
 #include "qapi/clone-visitor.h"
 #include "qapi/qapi-builtin-visit.h"
 #include "qapi/qmp/qerror.h"
+#include "qapi/qmp/qdict.h"
+#include "qapi/qmp/qlist.h"
+#include "qapi/qmp/qjson.h"
 #include "qemu/error-report.h"
 #include "sysemu/cpus.h"
 #include "exec/memory.h"
@@ -66,6 +71,7 @@
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/xen.h"
+#include "sysemu/dump.h"
 #include "migration/colo.h"
 #include "qemu/bitmap.h"
 #include "net/announce.h"
@@ -76,6 +82,7 @@
 
 #include "qemu/plugin-pf.h"
 #include "migration/external_snapshot_util.h"
+#include "exec/gdbstub.h"
 #include <fcntl.h>
 #include <sys/mman.h>
 
@@ -3313,6 +3320,113 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
             int64_t elapsed_ms = time_end_ms - time_start_ms;
             fprintf(stderr, "[gem5_chkpt] raw memory dump completed in %ld ms (%.2f seconds)\n", 
                     elapsed_ms, (double)elapsed_ms / 1000.0);
+        }
+
+        /* Dump CPU register state to <snapshot>.register-info.json in JSON format */
+        {
+            char reg_file_name[315];
+            snprintf(reg_file_name, sizeof(reg_file_name), "%s/register-info.json", gem_dir);
+
+            /* Build JSON structure using QDict/QList */
+            QDict *root = qdict_new();
+            qdict_put_str(root, "format", "qemu-register-dump");
+
+            QList *cpus_list = qlist_new();
+            CPUState *cpu;
+            int cpu_index = 0;
+            CPU_FOREACH(cpu) {
+                QDict *cpu_dict = qdict_new();
+                qdict_put_int(cpu_dict, "cpu_id", cpu_index++);
+                QDict *regs = gdb_get_registers_qdict(cpu);
+
+                /*
+                 * When SVE is active, the gdbstub registers z0-z31 (variable-width
+                 * SVE vectors) but NOT v0-v31 (128-bit NEON/FP).  Architecturally
+                 * the lower bits of each z register alias the smaller register views:
+                 *   v0 == z0[127:0]   (128 bits, 32 hex chars)
+                 *   q0 == z0[127:0]   (128 bits, same as v0)
+                 *   d0 == z0[63:0]    ( 64 bits, 16 hex chars)
+                 *   s0 == z0[31:0]    ( 32 bits,  8 hex chars)
+                 *   h0 == z0[15:0]    ( 16 bits,  4 hex chars)
+                 *   b0 == z0[7:0]     (  8 bits,  2 hex chars)
+                 *
+                 * Derive all sub-register views from z0-z31 for gem5 compatibility.
+                 * When SVE is not active (v0 already present), derive from v0 instead.
+                 */
+                {
+                    const char *src_prefix = NULL;
+                    if (qdict_haskey(regs, "z0") && !qdict_haskey(regs, "v0")) {
+                        src_prefix = "z";
+                    } else if (qdict_haskey(regs, "v0")) {
+                        src_prefix = "v";
+                    }
+
+                    if (src_prefix) {
+                        for (int i = 0; i < 32; i++) {
+                            char srcname[4];
+                            snprintf(srcname, sizeof(srcname), "%s%d", src_prefix, i);
+                            const char *srchex = qdict_get_str(regs, srcname);
+                            size_t len = strlen(srchex); /* includes "0x" prefix */
+
+                            /*
+                             * Extract lower N hex chars from the source hex string.
+                             * srchex = "0x<MSB...LSB>", so last N chars = lowest N*4 bits.
+                             */
+                            struct { const char *name; int hex_chars; } views[] = {
+                                { "v", 32 }, /* 128 bits */
+                                { "q", 32 }, /* 128 bits (alias of v) */
+                                { "d", 16 }, /*  64 bits */
+                                { "s",  8 }, /*  32 bits */
+                                { "h",  4 }, /*  16 bits */
+                                { "b",  2 }, /*   8 bits */
+                            };
+
+                            for (int v = 0; v < 6; v++) {
+                                char regname[4];
+                                snprintf(regname, sizeof(regname), "%s%d", views[v].name, i);
+
+                                if (qdict_haskey(regs, regname)) {
+                                    continue; /* already present */
+                                }
+
+                                int nhex = views[v].hex_chars;
+                                if ((int)len - 2 >= nhex) {
+                                    /* "0x" + lower nhex chars from the end */
+                                    char buf[36]; /* max "0x" + 32 + NUL */
+                                    snprintf(buf, sizeof(buf), "0x%s", srchex + len - nhex);
+                                    qdict_put_str(regs, regname, buf);
+                                } else {
+                                    /* Source is shorter/equal, copy as-is */
+                                    qdict_put_str(regs, regname, srchex);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                qdict_put(cpu_dict, "registers", regs);
+                qlist_append(cpus_list, cpu_dict);
+            }
+            qdict_put(root, "cpus", cpus_list);
+
+            /* Convert to JSON string and write to file */
+            GString *json_str = qobject_to_json_pretty(QOBJECT(root), true);
+            FILE *reg_f = fopen(reg_file_name, "w");
+            if (!reg_f) {
+                error_setg(errp, "Could not create gem5 register info file: %s", reg_file_name);
+                g_string_free(json_str, true);
+                qdict_unref(root);
+                ret = -1;
+                goto the_end;
+            }
+
+            fwrite(json_str->str, 1, json_str->len, reg_f);
+            fclose(reg_f);
+
+            g_string_free(json_str, true);
+            qdict_unref(root);
+
+            fprintf(stderr, "[gem5_chkpt] register info dumped to %s (JSON format)\n", reg_file_name);
         }
     }
 
