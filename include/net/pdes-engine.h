@@ -73,6 +73,8 @@ struct PDESEngine {
     // TODO this is specific to wwt, needs to be fixed
     uint64_t checkpoint_quantum_round;
     QEMUBH *boundry_checkpoint_bh;
+    // Special bool: if we checkpointed: since it can move time by qemu for all nodes: don't do boundry check : TODO clean this check up later
+    bool skip_boundry_check_after_checkpoint;
 
     // exit changes
     bool notified_neighbors_for_exit;

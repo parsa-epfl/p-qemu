@@ -69,6 +69,7 @@ PDESEngine *pdes_engine_create(
     engine->notified_neighbors = false;
     engine->notified_neighbors_for_exit = false;
     engine->boundry_checkpoint_bh = NULL;
+    engine->skip_boundry_check_after_checkpoint = false;
 
 
 

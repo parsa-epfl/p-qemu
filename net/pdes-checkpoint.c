@@ -306,6 +306,7 @@ void create_checkpoint_bh(bool exit_after){
     // delete and remove bh
     qemu_bh_delete(wwt_engine->engine->boundry_checkpoint_bh);
     wwt_engine->engine->boundry_checkpoint_bh = NULL;
+    wwt_engine->engine->skip_boundry_check_after_checkpoint = true;
 
     // TODO make this check more modular (also maybe move verify function to here?)
     // If checkpoint name is init_warmed, destroy engine and stop simulation

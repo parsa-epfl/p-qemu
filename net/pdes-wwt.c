@@ -353,7 +353,8 @@ void wwt_sync_check(){
         // get engine
         // TODO this part of checkpoint is to wwt specific, change later
         // TODO Add race condition lock so double checkpoint never happens (reason we double check needs_to_checkpoint)
-        bool monitor_virtual_time_drift = wwt_engine->should_sync;
+        bool monitor_virtual_time_drift = wwt_engine->should_sync && (!wwt_engine->engine->skip_boundry_check_after_checkpoint);
+        wwt_engine->engine->skip_boundry_check_after_checkpoint = false;
         if (monitor_virtual_time_drift){
             if (wwt_engine->current_quantum_round > 4){
                 int64_t universal_time = get_universal_virtual_time(wwt_engine->engine);
