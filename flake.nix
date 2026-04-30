@@ -35,11 +35,11 @@
       # This property is not required by mkDerivation, but appears as a environmental variable.
       # So I can run $configurationPhase in the shell.
       configurationPhase = ''
-        ./configure --target-list=aarch64-softmmu --disable-gtk --enable-capstone --with-bxdb=../bxdb
+        ./configure --target-list=aarch64-softmmu --disable-gtk --enable-capstone --with-bxdb=../../bxdb
       '';
 
       configurationPhaseWithExtSnapshots = ''
-        ./configure --target-list=aarch64-softmmu --disable-gtk --enable-capstone --enable-snapext --with-bxdb=../bxdb
+        ./configure --target-list=aarch64-softmmu --disable-gtk --enable-capstone --enable-snapext --with-bxdb=../../bxdb
       '';
 
       # Also this one.
