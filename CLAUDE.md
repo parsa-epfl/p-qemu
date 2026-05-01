@@ -1,5 +1,7 @@
 # CLAUDE.md — parallel-qemu/
 
+@MULTI_NODE.md
+
 This is a **submodule** of the QFlex simulator. The parent repo is at `..`; its [CLAUDE.md](../CLAUDE.md) explains the four-phase pipeline, sampling vocabulary, and how the binaries are wired into per-experiment `run/` directories. Read it for the full picture; this file documents only what's specific to *parallel-qemu/*.
 
 ## What this submodule is
