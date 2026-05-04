@@ -54,6 +54,9 @@ struct cpu_virtual_time_t cpu_virtual_time[256];
 struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES] __attribute__((aligned(64)));
 bool g_statistics_managed_by_plugin = false;
 
+/* Global timing info for host-side checkpoint time breakdown */
+struct qemu_plugin_timing_info g_timing_info __attribute__((aligned(64))) = {0};
+
 struct qemu_plugin_exposed_statistics *qemu_plugin_get_exposed_statistics(uint32_t core_idx)
 {
     g_statistics_managed_by_plugin = true; // this means the plugin is managing the statistics.
@@ -61,6 +64,11 @@ struct qemu_plugin_exposed_statistics *qemu_plugin_get_exposed_statistics(uint32
         return NULL;
     }
     return &g_exposed_statistics[core_idx];
+}
+
+struct qemu_plugin_timing_info *qemu_plugin_get_timing_info(void)
+{
+    return &g_timing_info;
 }
 
 uint64_t qemu_plugin_read_cpu_integer_register(int reg_index) {

@@ -2982,6 +2982,10 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
 
     GLOBAL_STATE_CODE();
 
+    struct timespec t_total_start, t_mem_start, t_mem_end;
+    struct timespec t_uarch_start, t_uarch_end;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_total_start);
+
     if (migration_is_blocked(errp)) {
         return false;
     }
@@ -3113,6 +3117,8 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         goto the_end;
     }
 
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_mem_start);
+
     if (format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE ||
         format == SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA) {
         struct RAMBlock *main_ram = get_main_memory();
@@ -3133,9 +3139,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         }
     }
 
-    if (pf_savevm_cb) {
-        pf_savevm_cb(sn->name);
-    }
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_mem_end);
 
     /* The bdrv_all_create_snapshot() call that follows acquires the AioContext
      * for itself.  BDRV_POLL_WHILE() does not support nested locking because
@@ -3152,9 +3156,31 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
         goto the_end;
     }
 
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_uarch_start);
+
+    if (pf_savevm_cb) {
+        pf_savevm_cb(sn->name);
+    }
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_uarch_end);
+
     ret = 0;
 
  the_end:
+    if (ret == 0) {
+        struct timespec t_now;
+        clock_gettime(CLOCK_MONOTONIC_RAW, &t_now);
+        uint64_t total_ns = (t_now.tv_sec - t_total_start.tv_sec) * 1000000000LL
+                          + (t_now.tv_nsec - t_total_start.tv_nsec);
+        uint64_t mem_ns = (t_mem_end.tv_sec - t_mem_start.tv_sec) * 1000000000LL
+                        + (t_mem_end.tv_nsec - t_mem_start.tv_nsec);
+        uint64_t uarch_ns = (t_uarch_end.tv_sec - t_uarch_start.tv_sec) * 1000000000LL
+                          + (t_uarch_end.tv_nsec - t_uarch_start.tv_nsec);
+        g_timing_info.total_save_time_ns += total_ns;
+        g_timing_info.save_memory_state_time_ns += mem_ns;
+        g_timing_info.save_uarch_state_time_ns += uarch_ns;
+    }
+
     if (aio_context) {
         aio_context_release(aio_context);
     }
@@ -3270,6 +3296,9 @@ static void *uffd_on_demand_thread(void *main_ram)
             continue;
         }
 
+        struct timespec t_page_start, t_page_end;
+        clock_gettime(CLOCK_MONOTONIC_RAW, &t_page_start);
+
         uint64_t fault_address = msg.arg.pagefault.address;
         assert(fault_address % page_size == 0);
 
@@ -3291,6 +3320,12 @@ static void *uffd_on_demand_thread(void *main_ram)
             false
         ) == 0);
 
+        clock_gettime(CLOCK_MONOTONIC_RAW, &t_page_end);
+
+        uint64_t page_ns = (t_page_end.tv_sec - t_page_start.tv_sec) * 1000000000LL
+                         + (t_page_end.tv_nsec - t_page_start.tv_nsec);
+        g_timing_info.load_memory_state_time_ns += page_ns;
+
         record_statistics_to_plugin(0, 5, 1);
     }
 }
@@ -3304,6 +3339,10 @@ bool load_snapshot(const char *name, const char *vmstate,
     int ret;
     AioContext *aio_context;
     MigrationIncomingState *mis = migration_incoming_get_current();
+
+    struct timespec t_total_start, t_mem_start = {0}, t_mem_end = {0};
+    struct timespec t_uarch_start, t_uarch_end;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_total_start);
 
     if (!bdrv_all_can_snapshot(has_devices, devices, errp)) {
         return false;
@@ -3421,8 +3460,10 @@ bool load_snapshot(const char *name, const char *vmstate,
     }
 
     if (is_incremental && !IS_ON_DEMAND_LOADING) {
+        clock_gettime(CLOCK_MONOTONIC_RAW, &t_mem_start);
         ret = bxdb_ckpt_load_bulk(name, main_ram->host,
                                   main_ram->used_length, errp);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &t_mem_end);
         if (ret < 0) {
             goto err_drain;
         }
@@ -3451,9 +3492,11 @@ bool load_snapshot(const char *name, const char *vmstate,
     }
 
     // Ask the plugin to load the snapshot.
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_uarch_start);
     if (pf_loadvm_cb) {
         pf_loadvm_cb(sn.name);
     }
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_uarch_end);
 
     aio_context_release(aio_context);
 
@@ -3462,6 +3505,20 @@ bool load_snapshot(const char *name, const char *vmstate,
     if (ret < 0) {
         error_setg(errp, "Error %d while loading VM state", ret);
         return false;
+    }
+
+    {
+        struct timespec t_now;
+        clock_gettime(CLOCK_MONOTONIC_RAW, &t_now);
+        uint64_t total_ns = (t_now.tv_sec - t_total_start.tv_sec) * 1000000000LL
+                          + (t_now.tv_nsec - t_total_start.tv_nsec);
+        uint64_t mem_ns = (t_mem_end.tv_sec - t_mem_start.tv_sec) * 1000000000LL
+                        + (t_mem_end.tv_nsec - t_mem_start.tv_nsec);
+        uint64_t uarch_ns = (t_uarch_end.tv_sec - t_uarch_start.tv_sec) * 1000000000LL
+                          + (t_uarch_end.tv_nsec - t_uarch_start.tv_nsec);
+        g_timing_info.total_load_time_ns += total_ns;
+        g_timing_info.load_memory_state_time_ns += mem_ns;
+        g_timing_info.load_uarch_state_time_ns += uarch_ns;
     }
 
     return true;

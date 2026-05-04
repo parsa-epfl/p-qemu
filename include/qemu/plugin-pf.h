@@ -49,6 +49,9 @@ extern struct cpu_virtual_time_t cpu_virtual_time[256];
 extern struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES];
 extern bool g_statistics_managed_by_plugin;
 
+/* Global timing info for host-side checkpoint time breakdown */
+extern struct qemu_plugin_timing_info g_timing_info;
+
 extern qemu_plugin_record_statistics_cb_t pf_record_statistics_cb;
 
 inline void record_statistics_to_plugin(uint64_t core_idx, uint64_t event_identifier, uint64_t increment) {
