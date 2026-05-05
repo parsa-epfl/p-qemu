@@ -23,7 +23,7 @@ PDESWWT *pdes_engine_wwt_create(
     const char *shm_recv,
     bool sync,
     int64_t latencyns,
-    PDESFinalRecvCallback cb, 
+    PDESFinalRecvCallback cb,
     void *opaque,
     bool master
 ){
@@ -38,29 +38,29 @@ PDESWWT *pdes_engine_wwt_create(
     wwt->sync_counts = g_hash_table_new(g_direct_hash, g_direct_equal);
     wwt->current_quantum_round = 0;
     // TODO make sure this is always done first here and for the engine
-    
+
 
     // Creating underlying PDESEngine
     wwt->engine = pdes_engine_create(
-        shm_send, 
-        shm_recv, 
-        sync, 
-        latencyns, 
-        wwt_recivied_callback, 
+        shm_send,
+        shm_recv,
+        sync,
+        latencyns,
+        wwt_recivied_callback,
         wwt,
         is_waiting_for_quanta,
         wwt,
         time_to_setup,
         master
     );
-    
+
 
     // Setup final callback and opaque for when receiving messages
     wwt->recv_opaque = opaque;
     wwt->recv_cb = cb;
 
 
-    
+
     wwt->quantum_ns = latencyns;
     wwt->latencyns = latencyns;
     // TODO remove all hard codes to number of neighbors to 1
@@ -97,11 +97,11 @@ void setup_wwt(PDESWWT *wwt_engine){
     // The blow hack is used, so fake first time then a correction to the time here
     // TODO see if this can be fixed later
 
-    
+
     //TODO change this name to setup wwt
     wwt_engine->engine->first_sync_virtual_time = current_time;
     printf("WWT: Setup called, setting first sync virtual time to %lu ns.\n", current_time);
-    
+
     PDESWWT *wwt = wwt_engine;
 
     // We are always doing barrier in case there are other ops there, but if sync is off we don't wait for neighbors to finish
@@ -110,7 +110,7 @@ void setup_wwt(PDESWWT *wwt_engine){
     // Schedule for first quantum which is based on latencyns
     timer_mod(wwt->quantum_timer, 0);
 
-    
+
     // TODO below is caused by the same problem, this marks the time diff as not calculated so it will be recalculated on first message
     wwt_engine->engine->caclulated_time_diff = false;
 
@@ -129,6 +129,9 @@ void setup_wwt(PDESWWT *wwt_engine){
     // TODO address the bug that may be caused without sync (as you can see multiple sync messages at once)
     wwt_engine->number_of_neighbors_finished = 0;
     printf("WWT: Setup starting at virtual time %lu ns and universal time off: %lu ns.\n", current_time, get_universal_virtual_time(wwt_engine->engine));
+    // TODO increasing this for when resource contention can happen when running things in parallel, needs a better cleaner solution
+    // 500ms one-shot defers the receive poll past first sync; without it a packet that arrives before our first sync goes out can be processed early and break time-bias setup
+    timer_mod(wwt_engine->engine->msg_rec_poll_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST)+500000000); // 500 milliseconds, just the first time
 }
 
 void send_sync(PDESWWT *wwt_engine){
@@ -146,7 +149,7 @@ int wwt_send(PDESWWT *wwt_engine, const uint8_t *data, size_t len){
     // time difference in seconds
     float time_diff_sec = (scheduled_time - current_virtual_time) / 1e9;
     // printf("Message to be processed in %.3f seconds at virtual time %lu ns (current virtual time is %lu ns).\n", time_diff_sec, scheduled_time, current_virtual_time);
-    Message msg = create_message(data, len, MSG_TYPE_NORMAL, scheduled_time); 
+    Message msg = create_message(data, len, MSG_TYPE_NORMAL, scheduled_time);
     // printf("WWT_SEND: raw=%ld universal=%ld scheduled=%ld latency=%ld\n",
     // qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), current_virtual_time, scheduled_time, wwt_engine->latencyns);
     return pdes_engine_send(wwt_engine->engine, &msg);
@@ -162,7 +165,7 @@ void wwt_recivied_callback(void *opaque, Message *msg){
 
     if(msg->type == MSG_TYPE_SYNC){
         // Received sync message from neighbor
-        
+
         // assert that time difference between nodes can not be more than quanta
         // TODO removed due to the host time poll of underlying engine causing issues, needs to be fixed later, should be ok for later syncs still
         // if (abs(translated_time - current_virtual_time) > wwt_engine->quantum_ns) {
@@ -214,8 +217,7 @@ void wwt_recivied_callback(void *opaque, Message *msg){
                 assert(false && "Received message with timestamp in the past while should_sync is enabled");
             }
         }else{
-            // To prevent time drift (i.e. sims running at different speeds) from halting simulation, always process message immediately
-            processing_time = current_virtual_time_translated + 1;
+            processing_time = (translated_time > current_virtual_time_translated + 1) ? translated_time : current_virtual_time_translated + 1;
         }
 
         int64_t raw_processing_time = processing_time + wwt_engine->engine->first_sync_virtual_time;
@@ -335,7 +337,7 @@ void wwt_sync_check(){
     PDESWWT *wwt_engine = get_singleton_wwt_engine();
     bool waiting = is_waiting_for_quanta(get_singleton_wwt_engine());
     int64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    
+
     while(waiting){
         // Poll for messages while waiting to avoid blocking message processing
         pdes_engine_poll(wwt_engine->engine);
@@ -370,21 +372,35 @@ void wwt_sync_check(){
                 assert(validity && "Current universal time should be equal to the quantum time at the end of quanta_sync, if this assertion fails it means that the host time poll of the underlying engine is causing issues with the timing of the quanta sync, needs to be fixed for better sync performance");
             }
         }
-        
+
         if(sync_checkpoint_check()){
             return;
         }
 
         timer_free(wwt_engine->sync_check_timer);
         wwt_engine->sync_check_timer = NULL;
-        
+
+
+        PDESEngine *engine = wwt_engine->engine;
+        if(engine->master){
+            // TODO again dependant to 2 nodes
+            // TODO make this more general to not be reliant on conservative boundaries
+            // TODO factor it out like the checkpoint portion
+            if (engine->ready_to_exit_neighbors >= 1 && engine->ready_to_exit){
+                engine->permitted_to_exit = true;
+                // Send PERMISSION_TO_END_EMULATION message to neighbor
+                Message permission_to_end_msg = create_message(NULL, 0, PERMISSION_TO_END_EMULATION, get_universal_virtual_time(engine));
+                pdes_comm_send(engine->comm, &permission_to_end_msg);
+                printf("Master received intent to end emulation message, permitting neighbor to exit and sending permission message back.\n");
+            }
+        }
 
         // TODO number_of_neighbors_finished should be deprecated
         wwt_engine->number_of_neighbors_finished -= wwt_engine->number_of_neighbors;
         wwt_engine->current_quantum_round++;
         wwt_engine->finished_quantum = false;
 
-        
+
 
 
         // Schedule next quantum
@@ -398,8 +414,8 @@ void wwt_sync_check(){
         // TODO make these quantum rounds into macros
 
         // TODO add this for parallel mode:  this seems to be empty time passed with no instruction after quantum. the boundry is still kept, due to how timers are set but this needs to be addressed
-        
-        
+
+
         // Compute the next time for quantum
         int64_t next_quantum_time = wwt_engine->current_quantum_round * wwt_engine->quantum_ns;
         // Transform it to local time
@@ -445,7 +461,7 @@ void quanta_sync(PDESWWT *wwt_engine){
     //     }
     // }
     // Pause any progress before we decide if we need to send in sync and other communications
-    
+
     // TODO DOCUMENT THIS MORE: for any operation between nodes that can have potential race conditions, it should be done after pause (to prevent race in node) but before send synnc (to prevent race in the other node)
     // TODO add a lock to engine and everything that needs it. notify neighbor is a good example
     pdes_engine_poll(wwt_engine->engine);
@@ -463,8 +479,6 @@ void quanta_sync(PDESWWT *wwt_engine){
         send_sync(wwt_engine);
     }
 
-    
-    
 
 
 
@@ -480,6 +494,6 @@ void quanta_sync(PDESWWT *wwt_engine){
 
     // Reset for next quantum
     // Do not set to 0, as if we have processed the next quantum's sync it will cause deadlock (i.e. the other qemu goes to end and waits while we are getting done processing this sync)
-    
+
     // printf("WWT: Starting quantum %lu at virtual time %lu ns.\n", wwt_engine->current_quantum_round, get_universal_virtual_time(wwt_engine->engine));
 }
