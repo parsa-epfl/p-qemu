@@ -828,6 +828,8 @@ typedef enum qemu_plugin_snapshot_format_t {
   QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_ZSTD = 2,
   QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE = 4, // A complete snapshot, with zstd compression. <name>.state.zstd and <name>.basemem.zstd will be created.
   QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA = 5, // an incremental snapshot based on the prior snapshot. <name>.state.zstd, <name>.deltamem.list, and <name>.deltamem.bin will be created.
+  QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE_NO_BXDB = 6,
+  QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA_NO_BXDB = 7,
 } qemu_plugin_snapshot_format_t;
 
 /**
