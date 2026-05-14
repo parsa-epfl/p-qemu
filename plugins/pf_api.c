@@ -34,6 +34,8 @@
 #include "qapi/error.h"
 #include "hw/core/cpu.h"
 #include "net/pdes-engine.h"
+#include "qemu/main-loop.h"
+#include "block/aio.h"
 
 
 // All cyan callback functions
@@ -232,15 +234,20 @@ bool qemu_plugin_register_flushing_local_tlb_cb(
   return true;
 }
 
-void qemu_plugin_notify_fully_warmed(void){
-  PDESEngine *engine = get_singleton_engine();
-  if (engine == NULL){
-    // directly request savvm
-    // TODO address the hardcoded init_warmed name
+static void do_notify_fully_warmed_bh(void *opaque) {
+  PDESEngine *engine = opaque;
+  if (engine == NULL) {
     save_snapshot("init_warmed", true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE, NULL);
-  }else{
+  } else {
     finish_initiate_checkpoint(engine);
   }
+}
+
+/* Deferred so RR doesn't block its own main loop on the cross-node handshake. */
+void qemu_plugin_notify_fully_warmed(void){
+  aio_bh_schedule_oneshot(qemu_get_aio_context(),
+                          do_notify_fully_warmed_bh,
+                          get_singleton_engine());
 }
 
 

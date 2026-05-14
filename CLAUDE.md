@@ -75,6 +75,7 @@ Output: `build/qemu-system-aarch64`. The parent then `cp`s `build/` to `<parent>
 
 ## See also
 
+- [../CORE_CLOCKS.md](../CORE_CLOCKS.md) — intra-node clocks, the polling barrier (`util/dynamic_barrier.c`), MTTCG vs RR mode, `quantum_size` / `check_period`, per-core `ip100ns`, the three wait blocks in `accel/tcg/tcg-accel-ops-quantum.c`, and the `stop_request ∈ {0,1,2}` snapshot/pause path. **Read this when debugging anything time-related in this fork.** Surfaced as the `core-clocks` skill.
 - [../CLAUDE.md](../CLAUDE.md) — qflex root: four-phase pipeline, multi-node config (`neighbor_node_list`, `latencies_ns_list`, `syncs_list`, `pdes_net_devs`), `ExperimentContext`.
 - [../WormCacheQFlex/CLAUDE.md](../WormCacheQFlex/CLAUDE.md) — the Rust plugin this QEMU loads via `-plugin` during functional warming.
 - [../qemu/CLAUDE.md](../qemu/CLAUDE.md) — the *other* QEMU fork (timing). PDES networking is kept in sync between the two; libqflex is built into that one only.

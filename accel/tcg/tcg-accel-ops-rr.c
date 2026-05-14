@@ -40,6 +40,7 @@
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
 #include "qemu/plugin-pf.h"
+#include "net/pdes-engine.h"
 
 /* Kick all RR vCPUs */
 void rr_kick_vcpu_thread(CPUState *unused)
@@ -321,6 +322,12 @@ static void *rr_cpu_thread_fn(void *arg)
             if (icount_switch_period != 0) {
                 cpu_budget = icount_switch_period > original_budget ? original_budget : icount_switch_period;
             }
+
+            /* MNQ cooperative pause: zero the per-round budget while engine->paused. */
+            PDESEngine *engine = get_singleton_engine();
+            if (engine && engine->paused) {
+                cpu_budget = 0;
+            }
         }
 
         replay_mutex_unlock();
@@ -329,9 +336,11 @@ static void *rr_cpu_thread_fn(void *arg)
             cycle += cpu_budget;
             if (icount_checking_period != 0 && cycle >= next_check_threshold) {
                 if (pf_periodic_check_cb) {
-                    if(pf_periodic_check_cb(icount_checking_period)) {
-                        pause_all_vcpus();
-                    };
+                    /* Returning true used to call pause_all_vcpus(), but that
+                     * pairs with vm_start() — and our cooperative pdes_play no
+                     * longer calls vm_start. Cooperative pause via engine->paused
+                     * handles synchronization; savevm path itself does vm_stop. */
+                    (void)pf_periodic_check_cb(icount_checking_period);
                 }
                 next_check_threshold += icount_checking_period;
             }

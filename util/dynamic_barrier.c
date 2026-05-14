@@ -13,6 +13,7 @@
 #include "sysemu/runstate.h"
 #include "sysemu/quantum.h"
 #include "qemu/plugin-pf.h"
+#include "net/pdes-engine.h"
 
 
 
@@ -187,6 +188,16 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
             *stop_request = 2;
             dynamic_barrier_polling_release_lock(barrier);
             return current_gen; // abandon the current quantum.
+        }
+
+        /* MNQ cooperative pause: leader holds the global clock while engine->paused. */
+        PDESEngine *engine = get_singleton_engine();
+        while (engine && engine->paused) {
+            if (!runstate_is_running()) {
+                *stop_request = 2;
+                dynamic_barrier_polling_release_lock(barrier);
+                return current_gen;
+            }
         }
 
         barrier->count = 0;
