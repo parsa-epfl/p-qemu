@@ -962,9 +962,10 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     /* Instruction counter expired.  */
     assert(icount_enabled());
 #ifndef CONFIG_USER_ONLY
-    /* Ensure global icount has gone forward */
-    // icount_update(cpu);
-    // Because we remove the icount_update, the executed budget should be calculated here.
+    /* Advance global qemu_icount by the chunk we just ran so virtual time
+     * tracks executed instructions and never overshoots the next timer
+     * deadline. Sequential (icount) mode only — MTTCG never reaches here. */
+    icount_update(cpu);
     int64_t executed = (cpu->icount_budget -
         (cpu_neg(cpu)->icount_decr.u16.low + cpu->icount_extra));
 
