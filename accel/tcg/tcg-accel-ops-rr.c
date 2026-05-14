@@ -345,11 +345,8 @@ static void *rr_cpu_thread_fn(void *arg)
                 next_check_threshold += icount_checking_period;
             }
 
-            // Bulk icount_increase(cpu_budget) removed: per-vCPU icount_update
-            // in icount_process_data now advances qemu_icount by the actually-
-            // executed amount, so VT cannot overshoot the next-timer deadline.
-            // Sequential (RR + icount) only — MTTCG uses tcg-accel-ops-quantum.c.
-            // icount_increase(cpu_budget);
+            // The time is increased here to avoid problem.
+            icount_increase(cpu_budget);
 
             // round the left quantum budget.
             // Clean all core's quantum budget requirement.

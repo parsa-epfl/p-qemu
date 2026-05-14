@@ -134,12 +134,8 @@ void icount_prepare_for_run(CPUState *cpu, int64_t cpu_budget)
 
 void icount_process_data(CPUState *cpu)
 {
-    /* Account for actually-executed instructions. Sequential (RR + icount) only
-     * — MTTCG/quantum uses its own per-core barrier and never reaches this path.
-     * The RR loop no longer bulk-advances qemu_icount via icount_increase(cpu_budget);
-     * we account per-vCPU here so virtual time stays exactly at deadlines and
-     * cross-node WWT sync sees zero drift in sequential mode. */
-    icount_update(cpu);
+    /* Account for executed instructions */
+    // icount_update(cpu);
 
     /* Reset the counters */
     cpu_neg(cpu)->icount_decr.u16.low = 0;
