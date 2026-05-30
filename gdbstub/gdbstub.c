@@ -28,6 +28,8 @@
 #include "qemu/cutils.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
+#include "qapi/qmp/qdict.h"
+#include "qapi/qmp/qstring.h"
 #include "trace.h"
 #include "exec/gdbstub.h"
 #include "gdbstub/syscalls.h"

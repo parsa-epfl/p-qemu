@@ -2985,6 +2985,224 @@ static struct {
     .base_name = {0},
 };
 
+/* ---------------------------------------------------------------------------
+ * gem5 checkpoint generation helpers
+ * --------------------------------------------------------------------------- */
+
+static bool gem5_dump_ram(const char *gem_dir, Error **errp)
+{
+    int64_t time_start_ms = g_get_monotonic_time() / 1000;
+
+    char raw_memory_file[307];
+    snprintf(raw_memory_file, sizeof(raw_memory_file),
+             "%s/system.physmem.store1.pmem", gem_dir);
+
+    QEMUFile *raw_file = qemu_file_open_output(raw_memory_file, errp);
+    if (!raw_file) {
+        error_setg(errp, "Could not create gem5 raw memory file");
+        return false;
+    }
+
+    struct RAMBlock *main_ram = get_main_memory();
+    if (!main_ram) {
+        error_setg(errp, "Could not find main memory block for gem5 checkpoint");
+        qemu_fclose(raw_file);
+        return false;
+    }
+
+    qemu_put_buffer(raw_file, main_ram->host, main_ram->used_length);
+    int ret2 = qemu_fclose(raw_file);
+    if (ret2 < 0) {
+        error_setg(errp, "Could not close gem5 raw memory file");
+        return false;
+    }
+
+    int64_t time_end_ms = g_get_monotonic_time() / 1000;
+    int64_t elapsed_ms = time_end_ms - time_start_ms;
+    fprintf(stderr, "[gem5_chkpt] raw memory dump completed in %ld ms (%.2f seconds)\n",
+            elapsed_ms, (double)elapsed_ms / 1000.0);
+    return true;
+}
+
+static bool gem5_dump_registers(const char *gem_dir, Error **errp)
+{
+    char reg_file_name[315];
+    snprintf(reg_file_name, sizeof(reg_file_name), "%s/register-info.json", gem_dir);
+
+    /* Build JSON structure using QDict/QList */
+    QDict *root = qdict_new();
+    qdict_put_str(root, "format", "qemu-register-dump");
+
+    QList *cpus_list = qlist_new();
+    CPUState *cpu;
+    int cpu_index = 0;
+    CPU_FOREACH(cpu) {
+        QDict *cpu_dict = qdict_new();
+        qdict_put_int(cpu_dict, "cpu_id", cpu_index++);
+        QDict *regs = gdb_get_registers_qdict(cpu);
+
+        /*
+         * When SVE is active, the gdbstub registers z0-z31 (variable-width
+         * SVE vectors) but NOT v0-v31 (128-bit NEON/FP).  Architecturally
+         * the lower bits of each z register alias the smaller register views:
+         *   v0 == z0[127:0]   (128 bits, 32 hex chars)
+         *   q0 == z0[127:0]   (128 bits, same as v0)
+         *   d0 == z0[63:0]    ( 64 bits, 16 hex chars)
+         *   s0 == z0[31:0]    ( 32 bits,  8 hex chars)
+         *   h0 == z0[15:0]    ( 16 bits,  4 hex chars)
+         *   b0 == z0[7:0]     (  8 bits,  2 hex chars)
+         *
+         * Derive all sub-register views from z0-z31 for gem5 compatibility.
+         * When SVE is not active (v0 already present), derive from v0 instead.
+         */
+        {
+            const char *src_prefix = NULL;
+            if (qdict_haskey(regs, "z0") && !qdict_haskey(regs, "v0")) {
+                src_prefix = "z";
+            } else if (qdict_haskey(regs, "v0")) {
+                src_prefix = "v";
+            }
+
+            if (src_prefix) {
+                for (int i = 0; i < 32; i++) {
+                    char srcname[4];
+                    snprintf(srcname, sizeof(srcname), "%s%d", src_prefix, i);
+                    const char *srchex = qdict_get_str(regs, srcname);
+                    size_t len = strlen(srchex); /* includes "0x" prefix */
+
+                    /*
+                     * Extract lower N hex chars from the source hex string.
+                     * srchex = "0x<MSB...LSB>", so last N chars = lowest N*4 bits.
+                     */
+                    struct { const char *name; int hex_chars; } views[] = {
+                        { "v", 32 }, /* 128 bits */
+                        { "q", 32 }, /* 128 bits (alias of v) */
+                        { "d", 16 }, /*  64 bits */
+                        { "s",  8 }, /*  32 bits */
+                        { "h",  4 }, /*  16 bits */
+                        { "b",  2 }, /*   8 bits */
+                    };
+
+                    for (int v = 0; v < 6; v++) {
+                        char regname[4];
+                        snprintf(regname, sizeof(regname), "%s%d", views[v].name, i);
+
+                        if (qdict_haskey(regs, regname)) {
+                            continue; /* already present */
+                        }
+
+                        int nhex = views[v].hex_chars;
+                        if ((int)len - 2 >= nhex) {
+                            /* "0x" + lower nhex chars from the end */
+                            char buf[36]; /* max "0x" + 32 + NUL */
+                            snprintf(buf, sizeof(buf), "0x%s", srchex + len - nhex);
+                            qdict_put_str(regs, regname, buf);
+                        } else {
+                            /* Source is shorter/equal, copy as-is */
+                            qdict_put_str(regs, regname, srchex);
+                        }
+                    }
+                }
+            }
+        }
+
+        qdict_put(cpu_dict, "registers", regs);
+        qlist_append(cpus_list, cpu_dict);
+    }
+    qdict_put(root, "cpus", cpus_list);
+
+    /* Convert to JSON string and write to file */
+    GString *json_str = qobject_to_json_pretty(QOBJECT(root), true);
+    FILE *reg_f = fopen(reg_file_name, "w");
+    if (!reg_f) {
+        error_setg(errp, "Could not create gem5 register info file: %s", reg_file_name);
+        g_string_free(json_str, true);
+        qdict_unref(root);
+        return false;
+    }
+
+    fwrite(json_str->str, 1, json_str->len, reg_f);
+    fclose(reg_f);
+    g_string_free(json_str, true);
+    qdict_unref(root);
+
+    fprintf(stderr, "[gem5_chkpt] register info dumped to %s (JSON format)\n", reg_file_name);
+    return true;
+}
+
+// TODO: Do it the right way.
+/* Dump VirtIO disk device info: exact same operations as
+ *   dump_disk_dev_info() in create_snapshot.py.
+ *
+ * Step 1: xp /xw 0xa003e40
+ *   Read 32-bit PFN from the VIRTIO_MMIO_QUEUE_PFN register (physical
+ *   address 0xa003e40 = MMIO base 0xa003e00 + offset 0x040).  Using
+ *   cpu_physical_memory_read dispatches through the MMIO handler, exactly
+ *   as the "xp" monitor command does.
+ *
+ * Step 2: extract_addr -- take the value, shift left 12
+ *   vio_base = pfn << 12
+ *
+ * Step 3: xp /xw (vio_base + 0x4002)
+ *   Read 32-bit word from guest RAM at vio_base + 0x4002.
+ *   (vio_base + 0x4000 = vring_avail base; +2 = avail->idx field.)
+ *
+ * Step 4: extract_value -- mask lower 16 bits (OFFSET_MASK = (1<<16)-1)
+ *   queue0_offset = word & 0xFFFF
+ */
+static bool gem5_dump_devinfo(const char *gem_dir, Error **errp)
+{
+    char dev_info_file[311];
+    snprintf(dev_info_file, sizeof(dev_info_file), "%s/dev.info", gem_dir);
+
+    /* Steps 1 & 2: read PFN from MMIO register, page-shift to get byte address */
+    uint32_t pfn = 0;
+    cpu_physical_memory_read(0xa003e40ULL, &pfn, sizeof(pfn));
+    pfn = le32_to_cpu(pfn);
+    hwaddr vio_base = (hwaddr)pfn << 12;
+
+    /* Steps 3 & 4: read 32-bit word from guest RAM, mask lower 16 bits */
+    uint32_t word = 0;
+    cpu_physical_memory_read(vio_base + 0x4002, &word, sizeof(word));
+    word = le32_to_cpu(word);
+    uint32_t queue0_offset = word & ((1u << 16) - 1);
+
+    FILE *dev_f = fopen(dev_info_file, "w");
+    if (!dev_f) {
+        error_setg(errp, "Could not create gem5 device info file: %s", dev_info_file);
+        return false;
+    }
+    fprintf(dev_f, "vio_base 0x%" PRIx64 "\n", (uint64_t)vio_base);
+    fprintf(dev_f, "queue0_offset %u\n", queue0_offset);
+    fclose(dev_f);
+
+    fprintf(stderr, "[gem5_chkpt] device info dumped to %s\n", dev_info_file);
+    return true;
+}
+
+bool generate_gem5_checkpoint(const char *name, Error **errp)
+{
+    char gem_dir[303];
+    snprintf(gem_dir, sizeof(gem_dir), "%s.gem", name);
+
+    if (mkdir(gem_dir, 0755) < 0 && errno != EEXIST) {
+        error_setg(errp, "Could not create gem5 checkpoint directory: %s", gem_dir);
+        return false;
+    }
+
+    if (!gem5_dump_ram(gem_dir, errp)) {
+        return false;
+    }
+    if (!gem5_dump_registers(gem_dir, errp)) {
+        return false;
+    }
+    if (!gem5_dump_devinfo(gem_dir, errp)) {
+        return false;
+    }
+
+    return true;
+}
+
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                   bool has_devices, strList *devices, SnapshotFormat format, 
                   bool generate_gem5_chkpt, Error **errp)
@@ -3275,208 +3493,8 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
     ret = 0;
 
     /* Generate gem5-compatible checkpoint files if requested */
-    if (generate_gem5_chkpt) {
-        
-        /* Create output directory <snapshot_name>.gem */
-        char gem_dir[303];
-        snprintf(gem_dir, sizeof(gem_dir), "%s.gem", sn->name);
-        if (mkdir(gem_dir, 0755) < 0 && errno != EEXIST) {
-            error_setg(errp, "Could not create gem5 checkpoint directory: %s", gem_dir);
-            ret = -1;
-            goto the_end;
-        }
-
-        /* Dump raw main memory with timing */
-        {
-            int64_t time_start_ms = g_get_monotonic_time() / 1000;
-
-            char raw_memory_file[307];
-            snprintf(raw_memory_file, sizeof(raw_memory_file), "%s/system.physmem.store1.pmem", gem_dir);
-
-            QEMUFile *raw_file = qemu_file_open_output(raw_memory_file, errp);
-            if (!raw_file) {
-                error_setg(errp, "Could not create gem5 raw memory file");
-                ret = -1;
-                goto the_end;
-            }
-
-            struct RAMBlock *main_ram = get_main_memory();
-            if (!main_ram) {
-                error_setg(errp, "Could not find main memory block for gem5 checkpoint");
-                qemu_fclose(raw_file);
-                ret = -1;
-                goto the_end;
-            }
-
-            qemu_put_buffer(raw_file, main_ram->host, main_ram->used_length);
-            ret2 = qemu_fclose(raw_file);
-            if (ret2 < 0) {
-                error_setg(errp, "Could not close gem5 raw memory file");
-                ret = ret2;
-                goto the_end;
-            }
-            
-            int64_t time_end_ms = g_get_monotonic_time() / 1000;
-            int64_t elapsed_ms = time_end_ms - time_start_ms;
-            fprintf(stderr, "[gem5_chkpt] raw memory dump completed in %ld ms (%.2f seconds)\n", 
-                    elapsed_ms, (double)elapsed_ms / 1000.0);
-        }
-
-        /* Dump CPU register state to <snapshot>.register-info.json in JSON format */
-        {
-            char reg_file_name[315];
-            snprintf(reg_file_name, sizeof(reg_file_name), "%s/register-info.json", gem_dir);
-
-            /* Build JSON structure using QDict/QList */
-            QDict *root = qdict_new();
-            qdict_put_str(root, "format", "qemu-register-dump");
-
-            QList *cpus_list = qlist_new();
-            CPUState *cpu;
-            int cpu_index = 0;
-            CPU_FOREACH(cpu) {
-                QDict *cpu_dict = qdict_new();
-                qdict_put_int(cpu_dict, "cpu_id", cpu_index++);
-                QDict *regs = gdb_get_registers_qdict(cpu);
-
-                /*
-                 * When SVE is active, the gdbstub registers z0-z31 (variable-width
-                 * SVE vectors) but NOT v0-v31 (128-bit NEON/FP).  Architecturally
-                 * the lower bits of each z register alias the smaller register views:
-                 *   v0 == z0[127:0]   (128 bits, 32 hex chars)
-                 *   q0 == z0[127:0]   (128 bits, same as v0)
-                 *   d0 == z0[63:0]    ( 64 bits, 16 hex chars)
-                 *   s0 == z0[31:0]    ( 32 bits,  8 hex chars)
-                 *   h0 == z0[15:0]    ( 16 bits,  4 hex chars)
-                 *   b0 == z0[7:0]     (  8 bits,  2 hex chars)
-                 *
-                 * Derive all sub-register views from z0-z31 for gem5 compatibility.
-                 * When SVE is not active (v0 already present), derive from v0 instead.
-                 */
-                {
-                    const char *src_prefix = NULL;
-                    if (qdict_haskey(regs, "z0") && !qdict_haskey(regs, "v0")) {
-                        src_prefix = "z";
-                    } else if (qdict_haskey(regs, "v0")) {
-                        src_prefix = "v";
-                    }
-
-                    if (src_prefix) {
-                        for (int i = 0; i < 32; i++) {
-                            char srcname[4];
-                            snprintf(srcname, sizeof(srcname), "%s%d", src_prefix, i);
-                            const char *srchex = qdict_get_str(regs, srcname);
-                            size_t len = strlen(srchex); /* includes "0x" prefix */
-
-                            /*
-                             * Extract lower N hex chars from the source hex string.
-                             * srchex = "0x<MSB...LSB>", so last N chars = lowest N*4 bits.
-                             */
-                            struct { const char *name; int hex_chars; } views[] = {
-                                { "v", 32 }, /* 128 bits */
-                                { "q", 32 }, /* 128 bits (alias of v) */
-                                { "d", 16 }, /*  64 bits */
-                                { "s",  8 }, /*  32 bits */
-                                { "h",  4 }, /*  16 bits */
-                                { "b",  2 }, /*   8 bits */
-                            };
-
-                            for (int v = 0; v < 6; v++) {
-                                char regname[4];
-                                snprintf(regname, sizeof(regname), "%s%d", views[v].name, i);
-
-                                if (qdict_haskey(regs, regname)) {
-                                    continue; /* already present */
-                                }
-
-                                int nhex = views[v].hex_chars;
-                                if ((int)len - 2 >= nhex) {
-                                    /* "0x" + lower nhex chars from the end */
-                                    char buf[36]; /* max "0x" + 32 + NUL */
-                                    snprintf(buf, sizeof(buf), "0x%s", srchex + len - nhex);
-                                    qdict_put_str(regs, regname, buf);
-                                } else {
-                                    /* Source is shorter/equal, copy as-is */
-                                    qdict_put_str(regs, regname, srchex);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                qdict_put(cpu_dict, "registers", regs);
-                qlist_append(cpus_list, cpu_dict);
-            }
-            qdict_put(root, "cpus", cpus_list);
-
-            /* Convert to JSON string and write to file */
-            GString *json_str = qobject_to_json_pretty(QOBJECT(root), true);
-            FILE *reg_f = fopen(reg_file_name, "w");
-            if (!reg_f) {
-                error_setg(errp, "Could not create gem5 register info file: %s", reg_file_name);
-                g_string_free(json_str, true);
-                qdict_unref(root);
-                ret = -1;
-                goto the_end;
-            }
-
-            fwrite(json_str->str, 1, json_str->len, reg_f);
-            fclose(reg_f);
-
-            g_string_free(json_str, true);
-            qdict_unref(root);
-
-            fprintf(stderr, "[gem5_chkpt] register info dumped to %s (JSON format)\n", reg_file_name);
-        }
-
-        // TODO: Do it the right way.
-        /* Dump VirtIO disk device info: exact same operations as
-            * dump_disk_dev_info() in create_snapshot.py.
-            *
-            * Step 1: xp /xw 0xa003e40
-            *   Read 32-bit PFN from the VIRTIO_MMIO_QUEUE_PFN register (physical
-            *   address 0xa003e40 = MMIO base 0xa003e00 + offset 0x040).  Using
-            *   cpu_physical_memory_read dispatches through the MMIO handler, exactly
-            *   as the "xp" monitor command does.
-            *
-            * Step 2: extract_addr -- take the value, shift left 12
-            *   vio_base = pfn << 12
-            *
-            * Step 3: xp /xw (vio_base + 0x4002)
-            *   Read 32-bit word from guest RAM at vio_base + 0x4002.
-            *   (vio_base + 0x4000 = vring_avail base; +2 = avail->idx field.)
-            *
-            * Step 4: extract_value -- mask lower 16 bits (OFFSET_MASK = (1<<16)-1)
-            *   queue0_offset = word & 0xFFFF
-            */
-        {
-            char dev_info_file[311];
-            snprintf(dev_info_file, sizeof(dev_info_file), "%s/dev.info", gem_dir);
-
-            /* Steps 1 & 2: read PFN from MMIO register, page-shift to get byte address */
-            uint32_t pfn = 0;
-            cpu_physical_memory_read(0xa003e40ULL, &pfn, sizeof(pfn));
-            pfn = le32_to_cpu(pfn);
-            hwaddr vio_base = (hwaddr)pfn << 12;
-
-            /* Steps 3 & 4: read 32-bit word from guest RAM, mask lower 16 bits */
-            uint32_t word = 0;
-            cpu_physical_memory_read(vio_base + 0x4002, &word, sizeof(word));
-            word = le32_to_cpu(word);
-            uint32_t queue0_offset = word & ((1u << 16) - 1);
-
-            FILE *dev_f = fopen(dev_info_file, "w");
-            if (!dev_f) {
-                error_setg(errp, "Could not create gem5 device info file: %s",
-                            dev_info_file);
-                ret = -1;
-                goto the_end;
-            }
-            fprintf(dev_f, "vio_base 0x%" PRIx64 "\n", (uint64_t)vio_base);
-            fprintf(dev_f, "queue0_offset %u\n", queue0_offset);
-            fclose(dev_f);
-            fprintf(stderr, "[gem5_chkpt] device info dumped to %s\n", dev_info_file);
-        }
+    if (generate_gem5_chkpt && !generate_gem5_checkpoint(sn->name, errp)) {
+        ret = -1;
     }
 
  the_end:
