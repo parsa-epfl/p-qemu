@@ -31,6 +31,7 @@
 #include "ui/qemu-spice.h"
 #include "sysemu/sysemu.h"
 #include "migration.h"
+#include "savevm.h"
 
 static void migration_global_dump(Monitor *mon)
 {
@@ -409,6 +410,29 @@ void hmp_savevm(Monitor *mon, const QDict *qdict)
                   true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_ZSTD, false, &err);
 
     hmp_handle_error(mon, err);
+}
+
+void hmp_convert_to_gem5_chkp(Monitor *mon, const QDict *qdict)
+{
+    const char *name = qdict_get_str(qdict, "name");
+    Error *err = NULL;
+
+    vm_stop(RUN_STATE_RESTORE_VM);
+
+    if (!load_snapshot(name, NULL, false, NULL, 0, &err)) {
+        hmp_handle_error(mon, err);
+        qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
+        return;
+    }
+
+    if (!generate_gem5_checkpoint(name, &err)) {
+        hmp_handle_error(mon, err);
+        qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
+        return;
+    }
+
+    fprintf(stderr, "[gem5_chkpt] checkpoint generated in %s.gem/\n", name);
+    qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
 }
 
 void hmp_delvm(Monitor *mon, const QDict *qdict)

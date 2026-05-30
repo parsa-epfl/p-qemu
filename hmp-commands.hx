@@ -362,6 +362,22 @@ SRST
 ERST
 
     {
+        .name       = "convert-to-gem5-chkp",
+        .args_type  = "name:s",
+        .params     = "tag",
+        .help       = "load a VM snapshot and generate gem5 checkpoint files in <tag>.gem/, then exit",
+        .cmd        = hmp_convert_to_gem5_chkp,
+    },
+
+SRST
+``convert-to-gem5-chkp`` *tag*
+  Load the VM snapshot identified by *tag*, generate gem5-compatible
+  checkpoint files (raw memory, register state, device info) into
+  the ``<tag>.gem/`` directory, then exit QEMU.  No guest instructions
+  are executed after the snapshot is loaded.
+ERST
+
+    {
         .name       = "delvm",
         .args_type  = "name:s",
         .params     = "tag",

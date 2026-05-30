@@ -78,6 +78,7 @@
 #include "hw/i386/pc.h"
 #include "migration/misc.h"
 #include "migration/snapshot.h"
+#include "migration/savevm.h"
 #include "sysemu/tpm.h"
 #include "sysemu/dma.h"
 #include "hw/audio/soundhw.h"
@@ -162,6 +163,7 @@ static const char *mem_path;
 static const char *incoming;
 static const char *loadvm;
 static int loadvm_on_demand = 0;
+static const char *convert_to_gem5_chkp;
 static const char *accelerators;
 static bool have_custom_ram_size;
 static const char *ram_memdev_id;
@@ -2416,6 +2418,14 @@ static void qemu_validate_options(const QDict *machine_opts)
           }
     }
 
+    if (convert_to_gem5_chkp && incoming) {
+        error_report("'incoming' and 'convert-to-gem5-chkp' options are mutually exclusive");
+        exit(EXIT_FAILURE);
+    }
+    if (convert_to_gem5_chkp && preconfig_requested) {
+        error_report("'preconfig' and 'convert-to-gem5-chkp' options are mutually exclusive");
+        exit(EXIT_FAILURE);
+    }
     if (loadvm && incoming) {
         error_report("'incoming' and 'loadvm' options are mutually exclusive");
         exit(EXIT_FAILURE);
@@ -2706,6 +2716,22 @@ void qmp_x_exit_preconfig(Error **errp)
 
     if (loadvm) {
         load_snapshot(loadvm, NULL, false, NULL, loadvm_on_demand, &error_fatal);
+    }
+    if (convert_to_gem5_chkp) {
+        Error *local_err = NULL;
+        if (!load_snapshot(convert_to_gem5_chkp, NULL, false, NULL, 0, &local_err)) {
+            error_reportf_err(local_err, "-convert-to-gem5-chkp %s: ",
+                              convert_to_gem5_chkp);
+            exit(1);
+        }
+        if (!generate_gem5_checkpoint(convert_to_gem5_chkp, &local_err)) {
+            error_reportf_err(local_err, "-convert-to-gem5-chkp %s: ",
+                              convert_to_gem5_chkp);
+            exit(1);
+        }
+        fprintf(stderr, "[gem5_chkpt] checkpoint generated in %s.gem/\n",
+                convert_to_gem5_chkp);
+        exit(0);
     }
     if (replay_mode != REPLAY_MODE_NONE) {
         replay_vmstate_init();
@@ -3250,6 +3276,9 @@ void qemu_init(int argc, char **argv)
                 break;
             case QEMU_OPTION_debugcon:
                 add_device_config(DEV_DEBUGCON, optarg);
+                break;
+            case QEMU_OPTION_convert_to_gem5_chkp:
+                convert_to_gem5_chkp = optarg;
                 break;
             case QEMU_OPTION_loadvm:
                 // split optarg into filename and on-demand flag, by comma.

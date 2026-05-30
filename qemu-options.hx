@@ -4474,6 +4474,18 @@ SRST
 
 ERST
 
+DEF("convert-to-gem5-chkp", HAS_ARG, QEMU_OPTION_convert_to_gem5_chkp, \
+    "-convert-to-gem5-chkp tag\n" \
+    "                load snapshot <tag>, generate gem5 checkpoint files into\n" \
+    "                <tag>.gem/, then exit (no guest instructions executed)\n",
+    QEMU_ARCH_ALL)
+SRST
+``-convert-to-gem5-chkp tag``
+    Load the VM snapshot identified by *tag*, write gem5-compatible
+    checkpoint files (raw memory, registers, device info) into ``<tag>.gem/``,
+    then exit QEMU gracefully.  No guest instructions are executed.
+ERST
+
 DEF("loadvm", HAS_ARG, QEMU_OPTION_loadvm, \
     "-loadvm [tag|id][,on-demand]\n" \
     "                start right away with a saved state (loadvm in monitor)\n",
