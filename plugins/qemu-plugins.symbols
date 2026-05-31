@@ -48,6 +48,9 @@
   qemu_plugin_write_physical_memory;
   qemu_plugin_read_ttbr_el1;
   qemu_plugin_read_tcr_el1;
+  qemu_plugin_read_sctlr_el1;
+  qemu_plugin_read_cpsr;
+  qemu_plugin_read_mair_el1;
   qemu_plugin_register_vcpu_branch_resolved_cb;
   qemu_plugin_read_pc_vpn;
   qemu_plugin_register_savevm_cb;

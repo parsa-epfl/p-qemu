@@ -697,6 +697,31 @@ PF_API AARCH64_ONLY_API uint64_t qemu_plugin_read_ttbr_el1(int which_ttbr);
 PF_API AARCH64_ONLY_API uint64_t qemu_plugin_read_tcr_el1(void);
 
 /**
+ * qemu_plugin_read_sctlr_el1 - returns the value of sctlr_el1.
+ *
+ * This function can be only called from threads that run a vCPU. Otherwise, it
+ * will trigger assertion failure.
+ */
+PF_API AARCH64_ONLY_API uint64_t qemu_plugin_read_sctlr_el1(void);
+
+/**
+ * qemu_plugin_read_cpsr - returns the value of CPSR (Current Program Status
+ * Register). In AArch64 this is the PSTATE assembled from its cached fields.
+ *
+ * This function can be only called from threads that run a vCPU. Otherwise, it
+ * will trigger assertion failure.
+ */
+PF_API AARCH64_ONLY_API uint64_t qemu_plugin_read_cpsr(void);
+
+/**
+ * qemu_plugin_read_mair_el1 - returns the value of mair_el1.
+ *
+ * This function can be only called from threads that run a vCPU. Otherwise, it
+ * will trigger assertion failure.
+ */
+PF_API AARCH64_ONLY_API uint64_t qemu_plugin_read_mair_el1(void);
+
+/**
  * qemu_plugin_hwaddr_translate_walk_trace - returns the trace of walking the
  * page table to get the specific translation.
  *

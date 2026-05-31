@@ -81,6 +81,33 @@ uint64_t qemu_plugin_read_tcr_el1(void) {
   return (uint64_t)cpu->env_ptr->cp15.tcr_el[1];
 }
 
+uint64_t qemu_plugin_read_sctlr_el1(void) {
+  g_assert_cmpstr(TARGET_NAME, ==, "aarch64");
+
+  CPUState *cpu = current_cpu;
+  g_assert(cpu != NULL);
+
+  return (uint64_t)cpu->env_ptr->cp15.sctlr_el[1];
+}
+
+uint64_t qemu_plugin_read_cpsr(void) {
+  g_assert_cmpstr(TARGET_NAME, ==, "aarch64");
+
+  CPUState *cpu = current_cpu;
+  g_assert(cpu != NULL);
+
+  return (uint64_t)cpsr_read(cpu->env_ptr);
+}
+
+uint64_t qemu_plugin_read_mair_el1(void) {
+  g_assert_cmpstr(TARGET_NAME, ==, "aarch64");
+
+  CPUState *cpu = current_cpu;
+  g_assert(cpu != NULL);
+
+  return (uint64_t)cpu->env_ptr->cp15.mair_el[1];
+}
+
 const uint64_t *qemu_plugin_hwaddr_translate_walk_trace(
     const struct qemu_plugin_hwaddr *hwaddr) {
   g_assert_cmpstr(TARGET_NAME, ==, "aarch64");
