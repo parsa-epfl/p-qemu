@@ -250,5 +250,16 @@ void qemu_plugin_notify_fully_warmed(void){
                           get_singleton_engine());
 }
 
+/* FW periodic-snapshot run complete (replaces the plugin's own exit(0)). Single-node (no engine):
+ * exit(0) here — every snapshot was already written synchronously by its own savevm. Multi-node:
+ * the final snapshot was only ARMED by the caller's savevm; PDES writes it at the next quantum
+ * boundary and then drives a coordinated exit (CTRL_CKP_FINAL -> CTRL_READY/CTRL_CLEANUP), so we
+ * just arm that on the master and return — exiting now would drop the last checkpoint (999-vs-1000). */
+void qemu_plugin_pdes_fw_complete(void){
+  PDESEngine *engine = get_singleton_engine();
+  if (engine == NULL) exit(0);
+  if (engine->master) engine->fw_exit_after_checkpoint = true;
+}
+
 
 #endif

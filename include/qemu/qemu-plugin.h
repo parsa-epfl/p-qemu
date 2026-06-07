@@ -931,4 +931,6 @@ PF_API bool qemu_plugin_register_flushing_local_tlb_cb(
 
 PF_API void qemu_plugin_notify_fully_warmed(void);
 
+PF_API void qemu_plugin_pdes_fw_complete(void);
+
 #endif /* QEMU_QEMU_PLUGIN_H */
