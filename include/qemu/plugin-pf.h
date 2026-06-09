@@ -34,16 +34,11 @@ extern qemu_plugin_flushing_local_tlb_t pf_flushing_local_tlb_cb;
 // The callback for delivering an interrupt to a vCPU.
 extern qemu_plugin_on_deliver_interrupt_cb_t pf_on_deliver_interrupt_cb;
 
+// The callback for delivering an interrupt with simulation timestamp.
+extern qemu_plugin_on_deliver_interrupt_with_time_cb_t pf_on_deliver_interrupt_with_time_cb;
+
 // The callback for saving statistics.
 extern qemu_plugin_save_statistics_callback_t pf_save_statistics_cb;
-
-struct cpu_virtual_time_t {
-  uint64_t vts;
-  uint64_t next_deadline_in_ns;
-  uint64_t __padding[6];
-};
-
-extern struct cpu_virtual_time_t cpu_virtual_time[256];
 
 /* Global statistics array exposed to plugins - aligned to prevent false sharing */
 extern struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES];

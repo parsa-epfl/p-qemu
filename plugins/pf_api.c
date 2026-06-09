@@ -44,11 +44,9 @@ qemu_plugin_event_loop_poll_cb_t pf_el_pool_cb = NULL;
 qemu_plugin_periodic_check_cb_t pf_periodic_check_cb = NULL;
 qemu_plugin_flushing_local_tlb_t pf_flushing_local_tlb_cb = NULL;
 qemu_plugin_on_deliver_interrupt_cb_t pf_on_deliver_interrupt_cb = NULL;
+qemu_plugin_on_deliver_interrupt_with_time_cb_t pf_on_deliver_interrupt_with_time_cb = NULL;
 qemu_plugin_save_statistics_callback_t pf_save_statistics_cb = NULL;
 qemu_plugin_record_statistics_cb_t pf_record_statistics_cb = NULL;
-
-// The virtual time of each CPUs.
-struct cpu_virtual_time_t cpu_virtual_time[256];
 
 /* Global statistics array exposed to plugins - aligned to prevent false sharing */
 struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES] __attribute__((aligned(64)));
@@ -242,7 +240,9 @@ bool qemu_plugin_register_periodic_check_cb(qemu_plugin_periodic_check_cb_t cb) 
 }
 
 uint64_t qemu_plugin_get_vcpu_vtime(uint32_t cpu_idx) {
-  return cpu_virtual_time[cpu_idx].vts;
+  CPUState *cpu = qemu_get_cpu(cpu_idx);
+  if (!cpu) return 0;
+  return cpu->vts;
 }
 
 bool qemu_plugin_register_flushing_local_tlb_cb(
@@ -302,6 +302,33 @@ bool qemu_plugin_register_record_statistics_cb(
   return true;
 }
 
+uint64_t *qemu_plugin_get_vcpu_target_time_ptr(uint32_t cpu_idx) {
+  CPUState *cpu = qemu_get_cpu(cpu_idx);
+  if (!cpu) return NULL;
+  return &cpu->vts;
+}
+
+uint32_t *qemu_plugin_get_vcpu_waiting_for_quantum_ptr(uint32_t cpu_idx) {
+  CPUState *cpu = qemu_get_cpu(cpu_idx);
+  if (!cpu) return NULL;
+  return &cpu->waiting_for_quantum;
+}
+
+uint64_t qemu_plugin_get_quantum_barrier_size(void) {
+  if (quantum_enabled()) return quantum_size;
+  return 0;
+}
+
+bool qemu_plugin_register_on_deliver_interrupt_with_time_cb(
+    qemu_plugin_on_deliver_interrupt_with_time_cb_t cb) {
+
+  if (pf_on_deliver_interrupt_with_time_cb) {
+    return false;
+  }
+
+  pf_on_deliver_interrupt_with_time_cb = cb;
+  return true;
+}
 
 
 #endif

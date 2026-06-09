@@ -952,6 +952,18 @@ typedef void (*qemu_plugin_on_deliver_interrupt_cb_t)(
 PF_API bool qemu_plugin_register_on_deliver_interrupt_cb(
     qemu_plugin_on_deliver_interrupt_cb_t cb);
 
+typedef void (*qemu_plugin_on_deliver_interrupt_with_time_cb_t)(
+    uint32_t vcpu_idx, uint64_t src_time, bool is_from_core);
+
+PF_API bool qemu_plugin_register_on_deliver_interrupt_with_time_cb(
+    qemu_plugin_on_deliver_interrupt_with_time_cb_t cb);
+
+PF_API uint64_t *qemu_plugin_get_vcpu_target_time_ptr(uint32_t cpu_idx);
+
+PF_API uint32_t *qemu_plugin_get_vcpu_waiting_for_quantum_ptr(uint32_t cpu_idx);
+
+PF_API uint64_t qemu_plugin_get_quantum_barrier_size(void);
+
 
 PF_API bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
     uint64_t *var);

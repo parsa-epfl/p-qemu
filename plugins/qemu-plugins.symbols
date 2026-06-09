@@ -53,13 +53,17 @@
   qemu_plugin_register_savevm_cb;
   qemu_plugin_register_loadvm_cb;
   qemu_plugin_get_quantum_size;
+  qemu_plugin_get_quantum_barrier_size;
   qemu_plugin_savevm;
   qemu_plugin_register_event_loop_poll_cb;
   qemu_plugin_is_icount_mode;
   qemu_plugin_register_periodic_check_cb;
   qemu_plugin_get_vcpu_vtime;
+  qemu_plugin_get_vcpu_target_time_ptr;
+  qemu_plugin_get_vcpu_waiting_for_quantum_ptr;
   qemu_plugin_register_flushing_local_tlb_cb;
   qemu_plugin_register_on_deliver_interrupt_cb;
+  qemu_plugin_register_on_deliver_interrupt_with_time_cb;
   qemu_plugin_register_plugin_quantum_generation_increment_variable;
   qemu_plugin_register_save_statistics_callback;
   qemu_plugin_get_exposed_statistics;
