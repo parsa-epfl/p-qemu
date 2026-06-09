@@ -1240,6 +1240,8 @@ static void bdrv_temp_snapshot_options(int *child_flags, QDict *child_options,
     /* Copy the read-only and discard options from the parent */
     qdict_copy_default(child_options, parent_options, BDRV_OPT_READ_ONLY);
     qdict_copy_default(child_options, parent_options, BDRV_OPT_DISCARD);
+    /* snapvm-external: carry the temp-snapshot name down to the overlay (no-op if unset). */
+    qdict_copy_default(child_options, parent_options, "tmp-snapshot-name");
 
     /* aio=native doesn't work for cache.direct=off, so disable it for the
      * temporary snapshot */
@@ -3840,10 +3842,37 @@ static BlockDriverState *bdrv_append_temp_snapshot(BlockDriverState *bs,
     qdict_put_str(snapshot_options, "file.filename", tmp_filename);
     qdict_put_str(snapshot_options, "driver", "qcow2");
 
+    /* snapvm-external: grab the requested snapshot name before bdrv_open consumes the qdict.
+     * NULL when tmp-snapshot-name wasn't given (every non-phantom use) -> behaviour unchanged. */
+    g_autofree char *tmp_snapshot_name =
+        g_strdup(qdict_get_try_str(snapshot_options, "tmp-snapshot-name"));
+
     bs_snapshot = bdrv_open(NULL, NULL, snapshot_options, flags, errp);
     snapshot_options = NULL;
     if (!bs_snapshot) {
         goto out;
+    }
+
+    /* snapvm-external: load the named snapshot's disk into the (read-only) base and fake a
+     * same-named empty snapshot in the transient overlay so loadvm's existence check passes.
+     * Skipped entirely when tmp_snapshot_name is NULL. */
+    if (tmp_snapshot_name != NULL) {
+        ret = bdrv_snapshot_load_tmp_by_id_or_name(bs, tmp_snapshot_name, errp);
+        if (ret < 0) {
+            bs_snapshot = NULL;
+            goto out;
+        }
+        QEMUSnapshotInfo sn_info;
+        ret = bdrv_snapshot_find(bs, &sn_info, tmp_snapshot_name);
+        if (ret < 0) {
+            bs_snapshot = NULL;
+            goto out;
+        }
+        ret = bdrv_snapshot_create(bs_snapshot, &sn_info);
+        if (ret < 0) {
+            bs_snapshot = NULL;
+            goto out;
+        }
     }
 
     aio_context_acquire(ctx);
@@ -4116,16 +4145,21 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
     /* Check if any unknown options were used */
     if (qdict_size(options) != 0) {
         const QDictEntry *entry = qdict_first(options);
-        if (flags & BDRV_O_PROTOCOL) {
+        /* snapvm-external: tmp-snapshot-name is consumed in bdrv_append_temp_snapshot, not by
+         * the block driver — tolerate it here instead of erroring. Any other unknown key still
+         * errors, so non-snapvm behaviour is unchanged. */
+        if (strcmp(entry->key, "tmp-snapshot-name") == 0) {
+            // ignored (handled by bdrv_append_temp_snapshot).
+        } else if (flags & BDRV_O_PROTOCOL) {
             error_setg(errp, "Block protocol '%s' doesn't support the option "
                        "'%s'", drv->format_name, entry->key);
+            goto close_and_fail;
         } else {
             error_setg(errp,
                        "Block format '%s' does not support the option '%s'",
                        drv->format_name, entry->key);
+            goto close_and_fail;
         }
-
-        goto close_and_fail;
     }
 
     bdrv_parent_cb_change_media(bs, true);
