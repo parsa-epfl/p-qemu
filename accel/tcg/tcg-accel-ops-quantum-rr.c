@@ -141,27 +141,6 @@ static void quantum_rr_deal_with_unplugged_cpus(void)
     }
 }
 
-/* Synchronize all CPUs to the maximum virtual time */
-static void quantum_rr_sync_virtual_time(int cpu_count)
-{
-    uint64_t max_vtime = 0;
-    int i;
-
-    /* Find maximum virtual time */
-    for (i = 0; i < cpu_count; i++) {
-        uint64_t vtime = cpu_virtual_time[i].vts;
-        if (vtime > max_vtime) {
-            max_vtime = vtime;
-        }
-    }
-
-    /* Synchronize all CPUs to max vtime */
-    for (i = 0; i < cpu_count; i++) {
-        assert(cpu_virtual_time[i].vts <= max_vtime);
-        cpu_virtual_time[i].vts = max_vtime;
-    }
-}
-
 /* Replenish quantum budget for all CPUs */
 static void quantum_rr_replenish_budgets(void)
 {
@@ -189,10 +168,10 @@ static void quantum_rr_replenish_budgets(void)
     }
 }
 
-/* Advance virtual time for a CPU by quantum_size */
+/* Align a halted CPU's virtual time to the quantum generation boundary */
 static void quantum_rr_advance_vtime(CPUState *cpu)
 {
-    cpu_virtual_time[cpu->cpu_index].vts += quantum_size;
+    cpu->vts = cpu->quantum_generation * quantum_size;
 }
 
 /* RCU force callback - ensures RCU can reclaim memory */
@@ -210,7 +189,6 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
 {
     Notifier force_rcu;
     CPUState *cpu = arg;
-    int cpu_count;
     uint64_t cycle = 0;
     uint64_t next_check_threshold = quantum_check_threshold;
 
@@ -261,7 +239,6 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
     while (1) {
         /* Replenish quantum budgets at start of each round */
         quantum_rr_replenish_budgets();
-        cpu_count = quantum_rr_cpu_count();
 
         /* Execute all CPUs in round-robin order */
 
@@ -340,9 +317,6 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
                 }
                 next_check_threshold += quantum_check_threshold;
             }
-
-            /* Synchronize virtual time across all CPUs */
-            quantum_rr_sync_virtual_time(cpu_count);
         }
 
         /* Check if all CPUs are idle - notify main loop to prevent deadlock */

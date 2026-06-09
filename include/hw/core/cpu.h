@@ -487,7 +487,8 @@ struct CPUState {
 
     // uint64_t padding[2];
 
-    uint64_t whether_spinning_on_quantum; // whther this core is waiting for the barrier.
+    uint64_t vts __attribute__((aligned(64)));
+    uint32_t waiting_for_quantum __attribute__((aligned(64)));
 
     // State for the time passing through the IPI.
     uint64_t sgi_sender_time_ns_valid;

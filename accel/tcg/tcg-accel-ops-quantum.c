@@ -179,7 +179,7 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu->sgi_sender_remaining_time_ns = 0;
     cpu->sgi_sender_quantum_generation = 0;
 
-    cpu->whether_spinning_on_quantum = false;
+    cpu->waiting_for_quantum = 0;
     cpu->wakeup_during_quantum_spinning = 0;
     cpu->wakeup_while_given_ts_is_smaller_than_before = 0;
 
@@ -242,10 +242,9 @@ continue_to_run:
                 while (cpu->quantum_budget_in_picosecond <= 0) {
                     uint64_t old_generation = cpu->quantum_generation;
                     uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
-                    cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                     int stop_request = 0;
 
-                    cpu->whether_spinning_on_quantum = true;
+                    cpu->waiting_for_quantum = 1;
 
                     uint32_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier,
@@ -254,7 +253,7 @@ continue_to_run:
                         cpu->touched_timer_during_last_quantum != 0
                     );
 
-                    cpu->whether_spinning_on_quantum = false;
+                    cpu->waiting_for_quantum = 0;
 
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
@@ -262,6 +261,7 @@ continue_to_run:
                         /* Budget is always one quantum of simulated time in ps. */
                         cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
+                        cpu->vts = cpu->quantum_generation * quantum_size;
                     } else {
                         // this means the vCPU quits due to the machine state change.
                         assert(new_generation == old_generation_low_32bit);
@@ -269,8 +269,9 @@ continue_to_run:
                         cpu->quantum_budget_in_picosecond = 0;
                         cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
+                        cpu->quantum_generation += 1;
+                        cpu->vts = cpu->quantum_generation * quantum_size;
                         assert(cpu->stop || cpu->stopped || !runstate_is_running());
-                        // printf("[%s:%d] CPU %d quits due to the machine state change. stop_request: %d, stopped: %d \n", __FILE__, __LINE__, cpu->cpu_index, cpu->stop, cpu->stopped);
                     }
 
                     if (stop_request) {
@@ -311,10 +312,9 @@ continue_to_run:
                 while (cpu->quantum_budget_in_picosecond <= quantum_for_deduction_ps) {
                     uint64_t old_generation = cpu->quantum_generation;
                     uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
-                    cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                     int stop_request = 0;
 
-                    cpu->whether_spinning_on_quantum = true;
+                    cpu->waiting_for_quantum = 1;
 
                     uint32_t new_generation = dynamic_barrier_polling_wait(
                         &quantum_barrier,
@@ -323,7 +323,7 @@ continue_to_run:
                         cpu->touched_timer_during_last_quantum != 0
                     );
 
-                    cpu->whether_spinning_on_quantum = false;
+                    cpu->waiting_for_quantum = 0;
 
                     if (stop_request != 2) {
                         assert(new_generation == old_generation_low_32bit + 1);
@@ -331,6 +331,7 @@ continue_to_run:
                         /* Budget is always one quantum of simulated time in ps. */
                         cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                         cpu->touched_timer_during_last_quantum = 0;
+                        cpu->vts = cpu->quantum_generation * quantum_size;
                     } else {
                         // this means the vCPU quits due to the machine state change.
                         assert(new_generation == old_generation_low_32bit);
@@ -338,6 +339,8 @@ continue_to_run:
                         cpu->quantum_budget_in_picosecond = 0;
                         cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                         cpu->quantum_budget_depleted = 1;
+                        cpu->quantum_generation += 1;
+                        cpu->vts = cpu->quantum_generation * quantum_size;
                         assert(cpu->stop || cpu->stopped || !runstate_is_running());
                     }
 
@@ -365,12 +368,10 @@ continue_to_run:
             do {
                 uint64_t old_generation = cpu->quantum_generation;
                 uint32_t old_generation_low_32bit = old_generation & 0xFFFFFFFF;
-                cpu_virtual_time[cpu->cpu_index].next_deadline_in_ns = -1;
                 int stop_request = 0;
 
-                // before going to sleep, I need to reset the sgi wakeup time so that others can pass the time.
                 cpu->sgi_sender_time_ns_valid = false;
-                cpu->whether_spinning_on_quantum = true;
+                cpu->waiting_for_quantum = 1;
 
                 uint32_t new_generation = dynamic_barrier_polling_wait(
                     &quantum_barrier,
@@ -379,7 +380,7 @@ continue_to_run:
                     cpu->touched_timer_during_last_quantum != 0
                 );
 
-                cpu->whether_spinning_on_quantum = false;
+                cpu->waiting_for_quantum = 0;
 
                 if (stop_request != 2) {
                     if (new_generation == old_generation_low_32bit) {
@@ -399,6 +400,7 @@ continue_to_run:
                     /* Budget is always one quantum of simulated time in ps. */
                     cpu->quantum_budget_in_picosecond += (int64_t)quantum_size * 1000;
                     cpu->touched_timer_during_last_quantum = 0;
+                    cpu->vts = cpu->quantum_generation * quantum_size;
                 } else {
                     // this means the vCPU quits due to the machine state change.
                     assert(new_generation == old_generation_low_32bit);
@@ -406,11 +408,10 @@ continue_to_run:
                     cpu->quantum_budget_in_picosecond = 0;
                     cpu->touched_timer_during_last_quantum = 1; // force updating the timer.
                     cpu->quantum_budget_depleted = 1;
+                    cpu->quantum_generation += 1;
+                    cpu->vts = cpu->quantum_generation * quantum_size;
                     assert(cpu->stop || cpu->stopped || !runstate_is_running());
-                    // printf("[%s:%d] CPU %d quits due to the machine state change. stop_request: %d, stopped: %d \n", __FILE__, __LINE__, cpu->cpu_index, cpu->stop, cpu->stopped);
                 }
-
-                cpu_virtual_time[cpu->cpu_index].vts += quantum_size;
 
 
                 if (stop_request) {

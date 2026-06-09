@@ -77,8 +77,7 @@ void quantum_flush_current_stats(CPUState *cpu)
     cpu->quantum_budget_in_picosecond -= required_picoseconds;
 
     /* Advance virtual time (vts is in nanoseconds). */
-    uint64_t current_index = cpu->cpu_index;
-    cpu_virtual_time[current_index].vts += required_picoseconds / 1000;
+    cpu->vts += required_picoseconds / 1000;
 }
 
 uint32_t HELPER(check_and_deduce_quantum)(CPUArchState *env) {
@@ -108,8 +107,7 @@ void HELPER(set_instruction_count_for_quantum)(CPUArchState *env, uint32_t requi
 void HELPER(increase_target_cycle)(CPUArchState *env) {
     assert(icount_enabled());
 
-    uint64_t current_index = current_cpu->cpu_index;
-    cpu_virtual_time[current_index].vts += current_cpu->last_tb_instruction_count_for_quantum * 10000 / current_cpu->ip100ns;
+    current_cpu->vts += current_cpu->last_tb_instruction_count_for_quantum * 10000 / current_cpu->ip100ns;
 
     current_cpu->last_tb_instruction_count_for_quantum = 0;
 }

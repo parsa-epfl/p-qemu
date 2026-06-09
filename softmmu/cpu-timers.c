@@ -116,12 +116,6 @@ void cpu_enable_ticks(void)
     if (!timers_state.cpu_ticks_enabled) {
         // save the snapshot vm_clock before it is cleaned.
         timers_state.virtual_clock_snapshot = timers_state.cpu_clock_offset;
-
-        if (quantum_enabled()) {
-            for (int i = 0; i < 256; ++i) {
-                cpu_virtual_time[i].vts = timers_state.virtual_clock_snapshot;
-            }
-        }
         if (icount_enabled()) {
             // well, we have adjust the virtual_clock_snapshot time, so we should clean the current icount.
             // by assigning offset, we cancel the value of the current icount.

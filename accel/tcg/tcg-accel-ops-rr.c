@@ -291,25 +291,28 @@ static void *rr_cpu_thread_fn(void *arg)
             for (int i = 0; i < rr_cpu_count(); i++) {
                 CPUState *cpu = first_cpu;
                 while (cpu) {
-                    cpu_virtual_time[cpu->cpu_index].vts += cpu->last_tb_instruction_count_for_quantum * 10000 / cpu->ip100ns;
+                    cpu->vts += cpu->last_tb_instruction_count_for_quantum * 10000 / cpu->ip100ns;
                     cpu->last_tb_instruction_count_for_quantum = 0;
                     cpu = CPU_NEXT(cpu);
                 }
             }
 
-            // SFind the maximum vtime and synchronize the time among all cores.
+            // Find the maximum vtime and synchronize the time among all cores.
             uint64_t max_vtime = 0;
             for (int i = 0; i < rr_cpu_count(); i++) {
-                uint64_t vtime = cpu_virtual_time[i].vts;
+                uint64_t vtime = cpu->vts;
                 if (vtime > max_vtime) {
                     max_vtime = vtime;
                 }
+                cpu = CPU_NEXT(cpu);
             }
 
             // Synchronize the time.
-            for (int i = 0; i < rr_cpu_count(); i++) {
-                assert(cpu_virtual_time[i].vts <= max_vtime);
-                cpu_virtual_time[i].vts = max_vtime;
+            cpu = first_cpu;
+            while (cpu) {
+                assert(cpu->vts <= max_vtime);
+                cpu->vts = max_vtime;
+                cpu = CPU_NEXT(cpu);
             }
 
 
