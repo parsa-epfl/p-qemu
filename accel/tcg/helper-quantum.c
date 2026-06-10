@@ -94,6 +94,7 @@ uint32_t HELPER(check_and_deduce_quantum)(CPUArchState *env) {
 
     if (current_cpu->quantum_budget_in_picosecond <= 0) {
         current_cpu->quantum_budget_depleted = 1;
+        current_cpu->vts = (current_cpu->quantum_generation + 1) * quantum_size;
         return true;
     }
     return false;

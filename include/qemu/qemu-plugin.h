@@ -958,6 +958,8 @@ typedef void (*qemu_plugin_on_deliver_interrupt_with_time_cb_t)(
 PF_API bool qemu_plugin_register_on_deliver_interrupt_with_time_cb(
     qemu_plugin_on_deliver_interrupt_with_time_cb_t cb);
 
+PF_API uint32_t *qemu_plugin_get_global_quantum_generation_ptr(void);
+
 PF_API uint64_t *qemu_plugin_get_vcpu_target_time_ptr(uint32_t cpu_idx);
 
 PF_API uint32_t *qemu_plugin_get_vcpu_waiting_for_quantum_ptr(uint32_t cpu_idx);

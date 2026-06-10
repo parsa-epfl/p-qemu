@@ -59,6 +59,7 @@
   qemu_plugin_is_icount_mode;
   qemu_plugin_register_periodic_check_cb;
   qemu_plugin_get_vcpu_vtime;
+  qemu_plugin_get_global_quantum_generation_ptr;
   qemu_plugin_get_vcpu_target_time_ptr;
   qemu_plugin_get_vcpu_waiting_for_quantum_ptr;
   qemu_plugin_register_flushing_local_tlb_cb;

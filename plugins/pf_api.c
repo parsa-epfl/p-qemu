@@ -302,6 +302,10 @@ bool qemu_plugin_register_record_statistics_cb(
   return true;
 }
 
+uint32_t *qemu_plugin_get_global_quantum_generation_ptr(void) {
+  return &quantum_barrier.return_value.two_32.generation;
+}
+
 uint64_t *qemu_plugin_get_vcpu_target_time_ptr(uint32_t cpu_idx) {
   CPUState *cpu = qemu_get_cpu(cpu_idx);
   if (!cpu) return NULL;
