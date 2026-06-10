@@ -318,11 +318,6 @@ uint32_t *qemu_plugin_get_vcpu_waiting_for_quantum_ptr(uint32_t cpu_idx) {
   return &cpu->waiting_for_quantum;
 }
 
-uint64_t qemu_plugin_get_quantum_barrier_size(void) {
-  if (quantum_enabled()) return quantum_size;
-  return 0;
-}
-
 bool qemu_plugin_register_on_deliver_interrupt_with_time_cb(
     qemu_plugin_on_deliver_interrupt_with_time_cb_t cb) {
 

@@ -964,9 +964,6 @@ PF_API uint64_t *qemu_plugin_get_vcpu_target_time_ptr(uint32_t cpu_idx);
 
 PF_API uint32_t *qemu_plugin_get_vcpu_waiting_for_quantum_ptr(uint32_t cpu_idx);
 
-PF_API uint64_t qemu_plugin_get_quantum_barrier_size(void);
-
-
 PF_API bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
     uint64_t *var);
 

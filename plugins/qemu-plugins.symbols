@@ -53,7 +53,6 @@
   qemu_plugin_register_savevm_cb;
   qemu_plugin_register_loadvm_cb;
   qemu_plugin_get_quantum_size;
-  qemu_plugin_get_quantum_barrier_size;
   qemu_plugin_savevm;
   qemu_plugin_register_event_loop_poll_cb;
   qemu_plugin_is_icount_mode;
