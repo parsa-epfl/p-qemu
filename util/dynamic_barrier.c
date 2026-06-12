@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <sched.h>
+#include "qemu/processor.h"
 
 #include "qemu/osdep.h"
 #include "hw/core/cpu.h"
@@ -158,8 +160,17 @@ int dynamic_barrier_polling_destroy(dynamic_barrier_polling_t *barrier) {
 
 static void dynamic_barrier_polling_acquire_lock(dynamic_barrier_polling_t *barrier) {
     uint64_t my_ticket = atomic_fetch_add(&barrier->lock.next_ticket, 1);
+    // Relax/yield ONLY while an MNQ pause is in force: the leader then parks holding this lock
+    // for a full peer-roundtrip and N-1 waiters would burn host cores. Every other wait (single
+    // node: engine==NULL; multi-node outside a pause) keeps the original pure spin, so existing
+    // PWQ paths are untouched.
+    PDESEngine *engine = get_singleton_engine();
+    uint64_t spins = 0;
     while (atomic_load(&barrier->lock.now_serving) != my_ticket) {
-        // do nothing
+        if (engine && qatomic_read(&engine->paused)) {
+            cpu_relax();
+            if (++spins == 10000) { sched_yield(); spins = 0; }
+        }
     }
 }
 
@@ -190,14 +201,19 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
             return current_gen; // abandon the current quantum.
         }
 
-        /* MNQ cooperative pause: leader holds the global clock while engine->paused. */
+        /* MNQ cooperative pause: leader holds the global clock while engine->paused. Longest
+         * wait in the system (a full peer-roundtrip) — relax/yield frees the host core with no
+         * semantic change: the clock only advances after this loop, so the guest stays frozen. */
         PDESEngine *engine = get_singleton_engine();
-        while (engine && engine->paused) {
+        uint64_t pause_spins = 0;
+        while (engine && qatomic_read(&engine->paused)) {
             if (!runstate_is_running()) {
                 *stop_request = 2;
                 dynamic_barrier_polling_release_lock(barrier);
                 return current_gen;
             }
+            cpu_relax();
+            if (++pause_spins == 10000) { sched_yield(); pause_spins = 0; }
         }
 
         barrier->count = 0;
