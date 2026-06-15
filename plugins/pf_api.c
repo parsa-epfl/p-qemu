@@ -238,6 +238,7 @@ static void do_notify_fully_warmed_bh(void *opaque) {
   PDESEngine *engine = opaque;
   if (engine == NULL) {
     save_snapshot("init_warmed", true, NULL, false, NULL, SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE, NULL);
+    exit(0);  /* single-node: snapshot written synchronously above; clean-exit like the multi-node master does after init_warmed */
   } else {
     finish_initiate_checkpoint(engine);
   }
