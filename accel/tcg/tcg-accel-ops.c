@@ -278,7 +278,7 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
     // Check for old format (2 columns)
     if (strstr(line, "ipns") != NULL && strstr(line, "affinity_core_idx") != NULL) {
         fprintf(stderr, "Error: core_info.csv uses deprecated 2-column format.\n");
-        fprintf(stderr, "Please migrate to new 12-column format using:\n");
+        fprintf(stderr, "Please migrate to new coefficient format using:\n");
         fprintf(stderr, "  python migrate_core_info.py <input> <output>\n");
         fclose(fp);
         exit(2);
@@ -288,7 +288,7 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
     if (strstr(line, "host_core_idx") == NULL ||
         strstr(line, "model_type") == NULL ||
         strstr(line, "bx_private_icache_miss_coeff") == NULL) {
-        fprintf(stderr, "Error: Invalid core_info.csv header. Expected 15-column format.\n");
+        fprintf(stderr, "Error: Invalid core_info.csv header. Expected 9-column format.\n");
         fclose(fp);
         exit(1);
     }
@@ -373,37 +373,25 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
                 exit(1);
             }
 
-            // Parse all 12 coefficients (stored as fixed-point: value * 1000)
+            // Parse all 6 coefficients (stored as fixed-point: value * 1000)
             const char *coeff_names[] = {
                 "bx_private_icache_miss_coeff",
-                "bx_private_dcache_miss_load_ptw_coeff",
-                "bx_private_dcache_miss_store_coeff",
+                "bx_private_dcache_miss_coeff",
                 "bx_shared_cache_miss_coeff",
                 "bx_bp_miss_coeff",
-                "bx_drain_pipeline_coeff",
                 "bx_drain_store_buffer_coeff",
-                "bx_read_noc_hop_coeff",
-                "bx_write_noc_hop_coeff",
-                "bx_ifetch_noc_hop_coeff",
-                "bx_instruction_u_coeff",
-                "bx_instruction_k_coeff"
+                "bx_instruction_coeff"
             };
             uint32_t *coeffs[] = {
                 &core_info_table[core_id].coeffs.bx_private_icache_miss_coeff,
-                &core_info_table[core_id].coeffs.bx_private_dcache_miss_load_ptw_coeff,
-                &core_info_table[core_id].coeffs.bx_private_dcache_miss_store_coeff,
+                &core_info_table[core_id].coeffs.bx_private_dcache_miss_coeff,
                 &core_info_table[core_id].coeffs.bx_shared_cache_miss_coeff,
                 &core_info_table[core_id].coeffs.bx_bp_miss_coeff,
-                &core_info_table[core_id].coeffs.bx_drain_pipeline_coeff,
                 &core_info_table[core_id].coeffs.bx_drain_store_buffer_coeff,
-                &core_info_table[core_id].coeffs.bx_read_noc_hop_coeff,
-                &core_info_table[core_id].coeffs.bx_write_noc_hop_coeff,
-                &core_info_table[core_id].coeffs.bx_ifetch_noc_hop_coeff,
-                &core_info_table[core_id].coeffs.bx_instruction_u_coeff,
-                &core_info_table[core_id].coeffs.bx_instruction_k_coeff
+                &core_info_table[core_id].coeffs.bx_instruction_coeff
             };
 
-            for (int i = 0; i < 12; i++) {
+            for (int i = 0; i < 6; i++) {
                 token = strtok_r(NULL, ",", &saveptr);
                 if (!token) {
                     fprintf(stderr, "Error: Row %d: failed to parse %s\n",
@@ -523,37 +511,25 @@ void tcg_parse_asid_info_file(const char *file_name)
 
         asid_coeff_t *entry = g_new0(asid_coeff_t, 1);
 
-        /* Columns 2–13: the 12 bx_* coefficients */
+        /* Columns 2–7: the 6 bx_* coefficients */
         const char *coeff_names[] = {
             "bx_private_icache_miss_coeff",
-            "bx_private_dcache_miss_load_ptw_coeff",
-            "bx_private_dcache_miss_store_coeff",
+            "bx_private_dcache_miss_coeff",
             "bx_shared_cache_miss_coeff",
             "bx_bp_miss_coeff",
-            "bx_drain_pipeline_coeff",
             "bx_drain_store_buffer_coeff",
-            "bx_read_noc_hop_coeff",
-            "bx_write_noc_hop_coeff",
-            "bx_ifetch_noc_hop_coeff",
-            "bx_instruction_u_coeff",
-            "bx_instruction_k_coeff"
+            "bx_instruction_coeff"
         };
         uint32_t *coeffs[] = {
             &entry->bx_private_icache_miss_coeff,
-            &entry->bx_private_dcache_miss_load_ptw_coeff,
-            &entry->bx_private_dcache_miss_store_coeff,
+            &entry->bx_private_dcache_miss_coeff,
             &entry->bx_shared_cache_miss_coeff,
             &entry->bx_bp_miss_coeff,
-            &entry->bx_drain_pipeline_coeff,
             &entry->bx_drain_store_buffer_coeff,
-            &entry->bx_read_noc_hop_coeff,
-            &entry->bx_write_noc_hop_coeff,
-            &entry->bx_ifetch_noc_hop_coeff,
-            &entry->bx_instruction_u_coeff,
-            &entry->bx_instruction_k_coeff
+            &entry->bx_instruction_coeff
         };
 
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < 6; i++) {
             token = strtok_r(NULL, ",", &saveptr);
             if (!token) {
                 fprintf(stderr,

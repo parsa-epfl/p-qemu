@@ -46,7 +46,7 @@ void quantum_flush_current_stats(CPUState *cpu)
 
         const uint32_t *stats  = this_core_info->arr;
         const uint32_t *coeffs = cpu->active_coeffs.arr;
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < 6; i++) {
             required_picoseconds += (uint64_t)stats[i] * coeffs[i];
         }
 

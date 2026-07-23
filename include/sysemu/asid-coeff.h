@@ -16,32 +16,28 @@
 #include <glib.h>
 
 /**
- * bx_coeff_t - IPC model coefficient set (12 fixed-point values).
+ * bx_coeff_t - IPC model coefficient set (6 fixed-point values).
  *
  * All values are stored as fixed-point integers (value * 1000).
  * The anonymous union exposes both named-field access (for readability
- * at init/debug sites) and an arr[12] view (for the vectorised hot loop).
+ * at init/debug sites) and an arr[6] view (for the vectorised hot loop).
  *
- * Field order in arr[] matches the declaration order of the named fields —
- * do not reorder without updating all loop consumers.
+ * Field order in arr[] matches the declaration order of the named fields
+ * AND the field order of qemu_plugin_exposed_statistics — the hot loop in
+ * quantum_flush_current_stats() pairs them by index, so do not reorder
+ * either struct without updating the other.
  */
 typedef struct {
     union {
         struct {
             uint32_t bx_private_icache_miss_coeff;
-            uint32_t bx_private_dcache_miss_load_ptw_coeff;
-            uint32_t bx_private_dcache_miss_store_coeff;
+            uint32_t bx_private_dcache_miss_coeff;
             uint32_t bx_shared_cache_miss_coeff;
             uint32_t bx_bp_miss_coeff;
-            uint32_t bx_drain_pipeline_coeff;
             uint32_t bx_drain_store_buffer_coeff;
-            uint32_t bx_read_noc_hop_coeff;
-            uint32_t bx_write_noc_hop_coeff;
-            uint32_t bx_ifetch_noc_hop_coeff;
-            uint32_t bx_instruction_u_coeff;
-            uint32_t bx_instruction_k_coeff;
+            uint32_t bx_instruction_coeff;
         };
-        uint32_t arr[12];
+        uint32_t arr[6];
     };
 } bx_coeff_t;
 
@@ -53,7 +49,7 @@ typedef bx_coeff_t asid_coeff_t;
  * @file_name: path to the CSV file (e.g. "asid_info.csv").
  *
  * Expected CSV header:
- *   asid,bx_private_icache_miss_coeff,...,bx_instruction_k_coeff
+ *   asid,bx_private_icache_miss_coeff,...,bx_instruction_coeff
  *
  * If the file does not exist the call is silently ignored and
  * tcg_get_asid_coeff_table() will return NULL.  Must be called

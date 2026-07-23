@@ -987,20 +987,14 @@ PF_API bool qemu_plugin_register_save_statistics_callback(
 struct __attribute__((aligned(64))) qemu_plugin_exposed_statistics {
     union {
         struct {
-            uint32_t private_icache_miss;           /**< Private instruction cache misses */
-            uint32_t private_dcache_miss_load_ptw;  /**< Private dcache misses: load + PTW combined */
-            uint32_t private_dcache_miss_store;     /**< Private dcache misses due to store */
-            uint32_t shared_cache_miss;             /**< Shared (LLC) cache misses */
-            uint32_t bp_miss;                       /**< Branch prediction misses */
-            uint32_t drain_pipeline;               /**< Pipeline drain events (ISB, exceptions) */
-            uint32_t drain_store_buffer;           /**< Store buffer drain events (DSB, acquire) */
-            uint32_t read_noc_hop;                 /**< NoC hop count for data reads */
-            uint32_t write_noc_hop;               /**< NoC hop count for data writes */
-            uint32_t ifetch_noc_hop;              /**< NoC hop count for instruction fetches */
-            uint32_t instruction_u;               /**< User-mode instructions executed */
-            uint32_t instruction_k;               /**< Kernel-mode instructions executed */
+            uint32_t private_icache_miss;    /**< Private instruction cache misses */
+            uint32_t private_dcache_miss;    /**< Private data cache misses (load + PTW + store) */
+            uint32_t shared_cache_miss;      /**< Shared (LLC) cache misses */
+            uint32_t bp_miss;                /**< Branch prediction misses */
+            uint32_t drain_store_buffer;     /**< Store buffer drain events (DSB, acquire) */
+            uint32_t instruction;            /**< Instructions executed (user + kernel) */
         };
-        uint32_t arr[12]; /**< Array view for vectorised accumulation loop */
+        uint32_t arr[6]; /**< Array view for vectorised accumulation loop */
     };
 };
 
