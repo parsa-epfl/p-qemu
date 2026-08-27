@@ -285,6 +285,16 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
             // Well, the rest of the picosecond budget is basically the idle time.
             if (cpu->quantum_budget_in_picosecond > 0) {
                 record_statistics_to_plugin(cpu->cpu_index, 4, cpu->quantum_budget_in_picosecond / 1000);
+                /*
+                 * first_cpu is the timekeeper: bank the unused (idle) portion
+                 * of its budget into the virtual clock so time still advances
+                 * when first_cpu is halted, then run any timer now due.  The
+                 * BQL is held here, so quantum_run_due_timers() won't relock.
+                 */
+                if (cpu == first_cpu) {
+                    advance_quantum_time_ps(cpu->quantum_budget_in_picosecond);
+                    quantum_run_due_timers();
+                }
             }
         }
 
@@ -292,15 +302,12 @@ static void *quantum_rr_cpu_thread_fn(void *arg)
         qatomic_set(&quantum_rr_current_cpu, NULL);
 
         if (!all_cpu_stopped) {
-            /* Handle timers */
-            increase_quantum_time();
-            int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
-                                                          QEMU_TIMER_ATTR_ALL);
-
-            if (deadline == 0) {
-                qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
-                qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-            }
+            /*
+             * The virtual clock and virtual timers are now driven by first_cpu
+             * as it consumes its quantum budget (see quantum_flush_current_stats
+             * and the idle-budget handling above), so there is nothing to do for
+             * timekeeping here.
+             */
 
             /* Track cycles for periodic checks */
             cycle += quantum_size;

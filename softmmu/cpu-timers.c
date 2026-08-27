@@ -32,6 +32,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/option.h"
 #include "qemu/seqlock.h"
+#include "qemu/timer.h"
 #include "sysemu/quantum.h"
 #include "sysemu/replay.h"
 #include "sysemu/runstate.h"
@@ -76,7 +77,8 @@ int64_t cpu_get_ticks(void)
 int64_t cpu_get_clock_locked(void)
 {
     if (quantum_enabled()) {
-        return timers_state.virtual_clock_snapshot + timers_state.quantum_set_time;
+        return timers_state.virtual_clock_snapshot +
+               timers_state.quantum_set_time_ps / 1000;
     }
     int64_t time;
 
@@ -153,7 +155,7 @@ void cpu_disable_ticks(void)
         }
 
         if (quantum_enabled()) {
-            timers_state.quantum_set_time = 0;
+            timers_state.quantum_set_time_ps = 0;
         }
 
         // record the time of the guest system.
@@ -163,21 +165,54 @@ void cpu_disable_ticks(void)
                          &timers_state.vm_clock_lock);
 }
 
-int64_t increase_quantum_time(void) {
+/*
+ * Advance the quantum virtual clock by @delta_ps picoseconds.
+ *
+ * Called by first_cpu (the designated timekeeper) as it consumes its quantum
+ * budget, both while executing (quantum_flush_current_stats) and while idle
+ * (qemu_wait_io_event).  Only first_cpu must call this; other cores never
+ * touch the global clock.  Working in picoseconds keeps the accumulation
+ * free of the per-flush rounding that the nanosecond conversion would add.
+ */
+void advance_quantum_time_ps(int64_t delta_ps) {
     assert(quantum_enabled());
 
     seqlock_write_lock(&timers_state.vm_clock_seqlock,
                        &timers_state.vm_clock_lock);
 
     if (timers_state.cpu_ticks_enabled) {
-        timers_state.quantum_set_time += quantum_size;
+        timers_state.quantum_set_time_ps += delta_ps;
     }
 
     seqlock_write_unlock(&timers_state.vm_clock_seqlock,
                          &timers_state.vm_clock_lock);
+}
 
-    // return the current time.
-    return timers_state.virtual_clock_snapshot + timers_state.quantum_set_time;
+/*
+ * Run any QEMU_CLOCK_VIRTUAL timers that are due at the current virtual time.
+ *
+ * The clock tree is always scanned (there is no cached deadline), so this is
+ * correct regardless of which core programmed the timer; it is deliberately
+ * unoptimised for now.  The BQL is acquired around qemu_clock_run_timers()
+ * unless the caller already holds it.  Intended to be driven by first_cpu.
+ */
+void quantum_run_due_timers(void) {
+    if (qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL) != 0) {
+        /* The soonest virtual timer is still in the future. */
+        return;
+    }
+
+    bool need_lock = !qemu_mutex_iothread_locked();
+    if (need_lock) {
+        qemu_mutex_lock_iothread();
+    }
+
+    qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+    qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+
+    if (need_lock) {
+        qemu_mutex_unlock_iothread();
+    }
 }
 
 static bool icount_state_needed(void *opaque)
@@ -319,7 +354,7 @@ void cpu_timers_init(void)
     qemu_spin_init(&timers_state.vm_clock_lock);
     vmstate_register(NULL, 0, &vmstate_timers, &timers_state);
 
-    timers_state.quantum_set_time = 0;
+    timers_state.quantum_set_time_ps = 0;
 
     cpu_throttle_init();
 }

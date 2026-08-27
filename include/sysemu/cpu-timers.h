@@ -74,8 +74,11 @@ void cpu_enable_ticks(void);
 /* Caller must hold BQL */
 void cpu_disable_ticks(void);
 
-// Called by the quantum barrier last thread.
-int64_t increase_quantum_time(void);
+/* Advance the quantum virtual clock by @delta_ps picoseconds (first_cpu only). */
+void advance_quantum_time_ps(int64_t delta_ps);
+
+/* Run any QEMU_CLOCK_VIRTUAL timers that are due at the current virtual time. */
+void quantum_run_due_timers(void);
 
 /*
  * return the time elapsed in VM between vm_start and vm_stop.

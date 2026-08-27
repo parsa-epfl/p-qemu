@@ -78,6 +78,20 @@ void quantum_flush_current_stats(CPUState *cpu)
 
     /* Advance virtual time (vts is in nanoseconds). */
     cpu->vts += required_picoseconds / 1000;
+
+    /*
+     * first_cpu is the global timekeeper: fold its exact picosecond
+     * consumption into the virtual clock.  No /1000 here, so the global clock
+     * stays free of the per-flush rounding that vts still carries.
+     *
+     * It then runs any virtual timer that just came due.  Doing this here
+     * rather than in the check_and_deduce_quantum helper also covers the
+     * TTBR-write flush path, so timers fire as soon as the clock crosses them.
+     */
+    if (cpu == first_cpu) {
+        advance_quantum_time_ps(required_picoseconds);
+        quantum_run_due_timers();
+    }
 }
 
 uint32_t HELPER(check_and_deduce_quantum)(CPUArchState *env) {
@@ -89,7 +103,10 @@ uint32_t HELPER(check_and_deduce_quantum)(CPUArchState *env) {
         return false;
     }
 
-    /* Flush accumulated statistics and deduct from the quantum budget. */
+    /*
+     * Flush accumulated statistics and deduct from the quantum budget.  For
+     * first_cpu this also advances the virtual clock and runs any due timer.
+     */
     quantum_flush_current_stats(current_cpu);
 
     if (current_cpu->quantum_budget_in_picosecond <= 0) {

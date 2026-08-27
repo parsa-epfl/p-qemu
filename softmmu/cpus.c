@@ -464,6 +464,16 @@ void qemu_wait_io_event(CPUState *cpu)
             if (affiliated_with_quantum) {
                 // record the idle time.
                 record_statistics_to_plugin(cpu->cpu_index, 4, cpu->quantum_budget_in_picosecond / 1000);
+                /*
+                 * first_cpu is the timekeeper: bank the unused (idle) portion
+                 * of its budget into the virtual clock so time keeps advancing
+                 * while first_cpu is halted, and run any timer now due.  The
+                 * BQL is held here, so quantum_run_due_timers() won't relock.
+                 */
+                if (cpu == first_cpu && cpu->quantum_budget_in_picosecond > 0) {
+                    advance_quantum_time_ps(cpu->quantum_budget_in_picosecond);
+                    quantum_run_due_timers();
+                }
                 cpu->quantum_budget_depleted = 1;
                 break; // we need to break in order to wait for the barrier.
             } else {

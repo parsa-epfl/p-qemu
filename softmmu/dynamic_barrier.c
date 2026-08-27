@@ -138,15 +138,12 @@ int dynamic_barrier_polling_init(dynamic_barrier_polling_t *barrier, int initial
     barrier->count = 0;
     barrier->return_value.two_32.generation = 0;
     barrier->return_value.two_32.stop_request = 0;
-    barrier->next_virtual_time_deadline_in_ns = 0;
 
     assert(quantum_enabled());
 
     for (int i = 0; i < 128; i++) {
         barrier->histogram[i] = create_histogram(100, 1e5, 101e5);
     }
-
-    barrier->timer_update_request = false;
 
     barrier->current_cycle = 0;
     barrier->next_check_threshold = quantum_check_threshold;
@@ -188,10 +185,6 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
 
     assert(private_generation == current_gen);
 
-    if (check_time) {
-        barrier->timer_update_request = true;
-    }
-
     uint64_t waiting_count = barrier->count;
 
     if (waiting_count == barrier->threshold - 1) {
@@ -199,28 +192,12 @@ uint32_t dynamic_barrier_polling_wait(dynamic_barrier_polling_t *barrier, uint32
         bool broadcast_stop_request = 0;
         barrier->count = 0;
 
-        // Advance the virtual clock by the quantum size.
-        int64_t current_virtual_time = increase_quantum_time();
-        barrier->next_virtual_time_deadline_in_ns -= quantum_size;
-
-        if (barrier->timer_update_request || barrier->next_virtual_time_deadline_in_ns <= 0) {
-            barrier->handling_interrupts = true;
-            qemu_mutex_lock_iothread();
-            qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-            qemu_mutex_unlock_iothread();
-            barrier->handling_interrupts = false;
-
-            int64_t deadline = qemu_clock_deadline_ns_virtual_clock_for_quantum(current_virtual_time);
-
-            if (deadline < 0) {
-                assert(!runstate_is_running());
-            } else {
-                barrier->next_virtual_time_deadline_in_ns = deadline;
-            }
-        }
-
-
-        barrier->timer_update_request = false;
+        /*
+         * The virtual clock and virtual timers are now driven by first_cpu as
+         * it consumes its quantum budget (see quantum_flush_current_stats and
+         * qemu_wait_io_event), so the barrier no longer advances time or runs
+         * timers here.
+         */
 
         // Now, process the delayed interrupts.
         barrier->handling_interrupts = true;
