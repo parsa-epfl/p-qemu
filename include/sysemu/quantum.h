@@ -14,9 +14,12 @@ void quantum_configure(QemuOpts *opts, Error **errp);
 extern uint64_t quantum_size;
 extern uint64_t quantum_check_threshold;
 extern bool quantum_allow_interrupt_wakeup_inside;
+extern bool quantum_rr_mode;
 #define quantum_enabled() (quantum_size != 0)
+#define quantum_rr_enabled() (quantum_rr_mode)
 #else
 #define quantum_enabled() (0)
+#define quantum_rr_enabled() (0)
 #endif
 
 

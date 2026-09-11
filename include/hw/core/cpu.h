@@ -32,6 +32,7 @@
 #include "qemu/thread.h"
 #include "qemu/plugin-event.h"
 #include "qom/object.h"
+#include "sysemu/asid-coeff.h"
 
 typedef int (*WriteCoreDumpFunction)(const void *buf, size_t size,
                                      void *opaque);
@@ -445,16 +446,35 @@ struct CPUState {
     GArray *iommu_notifiers;
 
     /* State for the time calculation */
-    uint64_t unknown_time; // whether this core does not have its time accurately reflected by its instruction. 
+    uint64_t unknown_time; // whether this core does not have its time accurately reflected by its instruction.
     uint64_t enter_idle_time; // number of  times when this core enters the idle mode
     uint64_t target_cycle_on_idle; // number of target cycles that are deduced due to the idle time.
-    uint64_t target_cycle_on_instruction; 
+    uint64_t target_cycle_on_instruction;
 
     // State for deduction of the quantum.
-    uint64_t ip100ns; // instruction per 10 pico second . 0 means this core is not managed by the quantum.
-    int64_t quantum_budget;
+    uint64_t ip100ns; // instructions per 100 nanoseconds. 0 means this core is not managed by the quantum.
+
+    /*
+     * True when this core was configured with model_type="ipc-model" in
+     * core_info.csv.  Only ipc-model cores participate in per-ASID
+     * coefficient switching via the TTBR write handler.
+     */
+    bool is_ipc_model;
+
+    /* Active IPC model coefficients (fixed-point: value * 1000).
+     * May be overridden per-ASID by the TTBR write handler.
+     * Aligned to 64 bytes so the hot loop in quantum_flush_current_stats
+     * fits in one cache line and the arr[] view can be loaded with a
+     * single aligned vector load. */
+    bx_coeff_t active_coeffs __attribute__((aligned(64)));
+
+    /* Default coefficients from core_info.csv; restored when an ASID is
+     * not found in the global ASID coefficient table. */
+    bx_coeff_t default_coeffs;
+
+    int64_t quantum_budget_in_picosecond;
     uint64_t quantum_generation;
-    uint64_t quantum_required;
+    uint64_t last_tb_instruction_count_for_quantum;
     int quantum_budget_depleted;
 
     uint64_t touched_timer_during_last_quantum; // whether this core has touched the timer during the last quantum.
@@ -467,7 +487,8 @@ struct CPUState {
 
     // uint64_t padding[2];
 
-    uint64_t whether_spinning_on_quantum; // whther this core is waiting for the barrier.
+    uint64_t vts __attribute__((aligned(64)));
+    uint32_t waiting_for_quantum __attribute__((aligned(64)));
 
     // State for the time passing through the IPI.
     uint64_t sgi_sender_time_ns_valid;

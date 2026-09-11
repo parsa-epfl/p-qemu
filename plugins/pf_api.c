@@ -44,9 +44,30 @@ qemu_plugin_event_loop_poll_cb_t pf_el_pool_cb = NULL;
 qemu_plugin_periodic_check_cb_t pf_periodic_check_cb = NULL;
 qemu_plugin_flushing_local_tlb_t pf_flushing_local_tlb_cb = NULL;
 qemu_plugin_on_deliver_interrupt_cb_t pf_on_deliver_interrupt_cb = NULL;
+qemu_plugin_on_deliver_interrupt_with_time_cb_t pf_on_deliver_interrupt_with_time_cb = NULL;
+qemu_plugin_save_statistics_callback_t pf_save_statistics_cb = NULL;
+qemu_plugin_record_statistics_cb_t pf_record_statistics_cb = NULL;
 
-// The virtual time of each CPUs.
-struct cpu_virtual_time_t cpu_virtual_time[256];
+/* Global statistics array exposed to plugins - aligned to prevent false sharing */
+struct qemu_plugin_exposed_statistics g_exposed_statistics[QEMU_PLUGIN_MAX_CORES] __attribute__((aligned(64)));
+bool g_statistics_managed_by_plugin = false;
+
+/* Global timing info for host-side checkpoint time breakdown */
+struct qemu_plugin_timing_info g_timing_info __attribute__((aligned(64))) = {0};
+
+struct qemu_plugin_exposed_statistics *qemu_plugin_get_exposed_statistics(uint32_t core_idx)
+{
+    g_statistics_managed_by_plugin = true; // this means the plugin is managing the statistics.
+    if (core_idx >= QEMU_PLUGIN_MAX_CORES) {
+        return NULL;
+    }
+    return &g_exposed_statistics[core_idx];
+}
+
+struct qemu_plugin_timing_info *qemu_plugin_get_timing_info(void)
+{
+    return &g_timing_info;
+}
 
 uint64_t qemu_plugin_read_cpu_integer_register(int reg_index) {
   g_assert_cmpstr(TARGET_NAME, ==, "aarch64");
@@ -219,7 +240,9 @@ bool qemu_plugin_register_periodic_check_cb(qemu_plugin_periodic_check_cb_t cb) 
 }
 
 uint64_t qemu_plugin_get_vcpu_vtime(uint32_t cpu_idx) {
-  return cpu_virtual_time[cpu_idx].vts;
+  CPUState *cpu = qemu_get_cpu(cpu_idx);
+  if (!cpu) return 0;
+  return cpu->vts;
 }
 
 bool qemu_plugin_register_flushing_local_tlb_cb(
@@ -256,6 +279,53 @@ bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
 
   quantum_barrier.plugin_quantum_generation = var;
 
+  return true;
+}
+
+bool qemu_plugin_register_save_statistics_callback(
+    qemu_plugin_save_statistics_callback_t cb) {
+  if (pf_save_statistics_cb) {
+    return false;
+  }
+
+  pf_save_statistics_cb = cb;
+  return true;
+}
+
+bool qemu_plugin_register_record_statistics_cb(
+    qemu_plugin_record_statistics_cb_t cb) {
+  if (pf_record_statistics_cb) {
+    return false;
+  }
+
+  pf_record_statistics_cb = cb;
+  return true;
+}
+
+uint32_t *qemu_plugin_get_global_quantum_generation_ptr(void) {
+  return &quantum_barrier.return_value.two_32.generation;
+}
+
+uint64_t *qemu_plugin_get_vcpu_target_time_ptr(uint32_t cpu_idx) {
+  CPUState *cpu = qemu_get_cpu(cpu_idx);
+  if (!cpu) return NULL;
+  return &cpu->vts;
+}
+
+uint32_t *qemu_plugin_get_vcpu_waiting_for_quantum_ptr(uint32_t cpu_idx) {
+  CPUState *cpu = qemu_get_cpu(cpu_idx);
+  if (!cpu) return NULL;
+  return &cpu->waiting_for_quantum;
+}
+
+bool qemu_plugin_register_on_deliver_interrupt_with_time_cb(
+    qemu_plugin_on_deliver_interrupt_with_time_cb_t cb) {
+
+  if (pf_on_deliver_interrupt_with_time_cb) {
+    return false;
+  }
+
+  pf_on_deliver_interrupt_with_time_cb = cb;
   return true;
 }
 

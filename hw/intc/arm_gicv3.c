@@ -243,11 +243,6 @@ static void gicv3_update_noirqset(GICv3State *s, int start, int len)
             continue;
         }
 
-        // Interrupt from devices.
-        if (pf_on_deliver_interrupt_cb) {
-          pf_on_deliver_interrupt_cb(cs->cpu->cpu_index);
-        }
-
         prio = s->gicd_ipriority[i];
         if (irqbetter(cs, i, prio)) {
             cs->hppi.irq = i;

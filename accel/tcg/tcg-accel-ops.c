@@ -30,18 +30,21 @@
 #include "sysemu/replay.h"
 #include "sysemu/cpu-timers.h"
 #include "sysemu/quantum.h"
+#include "sysemu/asid-coeff.h"
 #include "qemu/main-loop.h"
 #include "qemu/guest-random.h"
 #include "qemu/timer.h"
 #include "exec/exec-all.h"
 #include "exec/hwaddr.h"
 #include "exec/gdbstub.h"
+#include <math.h>
 
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-mttcg.h"
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
 #include "tcg-accel-ops-quantum.h"
+#include "tcg-accel-ops-quantum-rr.h"
 
 /* common functionality among all TCG variants */
 
@@ -190,7 +193,12 @@ static inline void tcg_remove_all_breakpoints(CPUState *cpu)
 
 static void tcg_accel_ops_init(AccelOpsClass *ops)
 {
-    if (quantum_enabled()) {
+    if (quantum_enabled() && quantum_rr_enabled()) {
+        /* Quantum-RR mode: single-threaded round-robin with quantum */
+        ops->create_vcpu_thread = quantum_rr_start_vcpu_thread;
+        ops->kick_vcpu_thread = quantum_rr_kick_vcpu_thread;
+        quantum_rr_initialize();
+    } else if (quantum_enabled()) {
         ops->create_vcpu_thread = quantum_start_vcpu_thread;
         ops->kick_vcpu_thread = quantum_kick_vcpu_thread;
         ops->handle_interrupt = tcg_handle_interrupt;
@@ -239,3 +247,325 @@ static void tcg_accel_ops_register_types(void)
     type_register_static(&tcg_accel_ops_type);
 }
 type_init(tcg_accel_ops_register_types);
+
+/* Parse core_info.csv file and fill the core_info_table */
+void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info_table, int max_cores)
+{
+    // By default, all cores' IPC is 0, which means not managed by the IPC and the quantum.
+    for (int i = 0; i < max_cores; ++i) {
+        core_info_table[i].host_core_idx = i;
+        core_info_table[i].ipns = 0.0;
+        core_info_table[i].is_constant = false;
+        core_info_table[i].coeffs = (bx_coeff_t){0};
+    }
+
+    // Load the IPC from the file.
+    FILE *fp = fopen(file_name, "r");
+    if (!fp) {
+        return;  // File not found, use defaults
+    }
+
+    char line[1024];
+    int core_id = 0;
+
+    // Read and validate header
+    if (fgets(line, sizeof(line), fp) == NULL) {
+        fprintf(stderr, "Error: Empty core_info.csv file\n");
+        fclose(fp);
+        exit(1);
+    }
+
+    // Check for old format (2 columns)
+    if (strstr(line, "ipns") != NULL && strstr(line, "affinity_core_idx") != NULL) {
+        fprintf(stderr, "Error: core_info.csv uses deprecated 2-column format.\n");
+        fprintf(stderr, "Please migrate to the 9-column coefficient format.\n");
+        fclose(fp);
+        exit(2);
+    }
+
+    // Check for new format header
+    if (strstr(line, "host_core_idx") == NULL ||
+        strstr(line, "model_type") == NULL ||
+        strstr(line, "bx_private_icache_miss_coeff") == NULL) {
+        fprintf(stderr, "Error: Invalid core_info.csv header. Expected 9-column format.\n");
+        fclose(fp);
+        exit(1);
+    }
+
+    // Parse data rows
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        // Skip empty lines and comments
+        if (line[0] == '\n' || line[0] == '#' || line[0] == '\0') {
+            continue;
+        }
+
+        // Trim trailing newline
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n') {
+            line[len - 1] = '\0';
+        }
+
+        char *saveptr = NULL;
+        char *token = strtok_r(line, ",", &saveptr);
+        if (!token) {
+            fprintf(stderr, "Error: Row %d: failed to parse host_core_idx\n", core_id);
+            fclose(fp);
+            exit(1);
+        }
+        core_info_table[core_id].host_core_idx = strtoll(token, NULL, 10);
+
+        token = strtok_r(NULL, ",", &saveptr);
+        if (!token) {
+            fprintf(stderr, "Error: Row %d: failed to parse model_type\n", core_id);
+            fclose(fp);
+            exit(1);
+        }
+
+        // Trim whitespace from model_type
+        while (*token == ' ' || *token == '\t') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t' || *end == '\r')) *end-- = '\0';
+
+        bool is_constant_model = false;
+        if (strcmp(token, "constant") == 0) {
+            is_constant_model = true;
+        } else if (strcmp(token, "ipc-model") == 0) {
+            is_constant_model = false;
+        } else {
+            fprintf(stderr, "Error: Row %d: model_type must be 'constant' or 'ipc-model', got '%s'\n",
+                    core_id, token);
+            fclose(fp);
+            exit(1);
+        }
+
+        token = strtok_r(NULL, ",", &saveptr);
+        if (!token) {
+            fprintf(stderr, "Error: Row %d: failed to parse ipns\n", core_id);
+            fclose(fp);
+            exit(1);
+        }
+        double ipns = strtod(token, NULL);
+        if (ipns < 0) {
+            fprintf(stderr, "Error: Row %d: ipns must be non-negative, got %f\n", core_id, ipns);
+            fclose(fp);
+            exit(1);
+        }
+        core_info_table[core_id].ipns = ipns;
+
+        // For constant model, coefficients are not parsed from CSV
+        if (is_constant_model) {
+            core_info_table[core_id].is_constant = true;
+            // All feature coefficients remain 0; timing uses ipns directly via ip100ns path.
+            // Just verify it's positive
+            if (ipns <= 0) {
+                fprintf(stderr, "Error: Row %d: constant model requires positive ipns, got %f\n",
+                        core_id, ipns);
+                fclose(fp);
+                exit(1);
+            }
+        } else {
+            // IPC model: validate ipns == 1.0
+            if (fabs(ipns - 1.0) > 1e-9) {
+                fprintf(stderr, "Error: Row %d: ipc-model requires ipns=1.0, got %f\n",
+                        core_id, ipns);
+                fclose(fp);
+                exit(1);
+            }
+
+            // Parse all 6 coefficients (stored as fixed-point: value * 1000)
+            const char *coeff_names[] = {
+                "bx_private_icache_miss_coeff",
+                "bx_private_dcache_miss_coeff",
+                "bx_shared_cache_miss_coeff",
+                "bx_bp_miss_coeff",
+                "bx_drain_store_buffer_coeff",
+                "bx_instruction_coeff"
+            };
+            uint32_t *coeffs[] = {
+                &core_info_table[core_id].coeffs.bx_private_icache_miss_coeff,
+                &core_info_table[core_id].coeffs.bx_private_dcache_miss_coeff,
+                &core_info_table[core_id].coeffs.bx_shared_cache_miss_coeff,
+                &core_info_table[core_id].coeffs.bx_bp_miss_coeff,
+                &core_info_table[core_id].coeffs.bx_drain_store_buffer_coeff,
+                &core_info_table[core_id].coeffs.bx_instruction_coeff
+            };
+
+            for (int i = 0; i < 6; i++) {
+                token = strtok_r(NULL, ",", &saveptr);
+                if (!token) {
+                    fprintf(stderr, "Error: Row %d: failed to parse %s\n",
+                            core_id, coeff_names[i]);
+                    fclose(fp);
+                    exit(1);
+                }
+                double val = strtod(token, NULL);
+                if (val < 0) {
+                    fprintf(stderr, "Error: Row %d: %s must be non-negative, got %f\n",
+                            core_id, coeff_names[i], val);
+                    fclose(fp);
+                    exit(1);
+                }
+                // Convert to fixed-point: multiply by 1000 and round to nearest integer
+                uint64_t fixed = (uint64_t)(val * 1000.0 + 0.5);
+                if (fixed > UINT32_MAX) {
+                    fprintf(stderr, "Error: Row %d: %s value %f overflows uint32 in fixed-point\n",
+                            core_id, coeff_names[i], val);
+                    fclose(fp);
+                    exit(1);
+                }
+                *coeffs[i] = (uint32_t)fixed;
+            }
+        }
+
+        core_id += 1;
+        if (core_id >= max_cores) {
+            fprintf(stderr, "Error: Too many cores in core_info.csv (max %d)\n", max_cores);
+            fclose(fp);
+            exit(1);
+        }
+    }
+
+    fclose(fp);
+}
+
+/* -----------------------------------------------------------------------
+ * Per-ASID coefficient table
+ * ----------------------------------------------------------------------- */
+
+/*
+ * Global ASID coefficient hash table.  Written once at startup
+ * (tcg_parse_asid_info_file), then read-only — concurrent reads from
+ * multiple vCPU threads are therefore safe without locking.
+ *
+ * Keys:   GUINT_TO_POINTER((guint)asid)  [uint16_t ASID, fits in pointer]
+ * Values: heap-allocated asid_coeff_t *  (freed by the table destructor)
+ */
+static GHashTable *asid_coeff_table;
+
+GHashTable *tcg_get_asid_coeff_table(void)
+{
+    return asid_coeff_table;
+}
+
+void tcg_parse_asid_info_file(const char *file_name)
+{
+    FILE *fp = fopen(file_name, "r");
+    if (!fp) {
+        /* Optional file — silently ignore if absent */
+        return;
+    }
+
+    /* Create table on first successful open */
+    asid_coeff_table = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+                                              NULL, g_free);
+
+    char line[1024];
+
+    /* Read and validate header */
+    if (fgets(line, sizeof(line), fp) == NULL) {
+        fprintf(stderr, "Error: Empty asid_info.csv file\n");
+        fclose(fp);
+        exit(1);
+    }
+
+    if (strstr(line, "asid") == NULL ||
+        strstr(line, "bx_private_icache_miss_coeff") == NULL) {
+        fprintf(stderr,
+                "Error: Invalid asid_info.csv header. "
+                "Expected: asid,bx_private_icache_miss_coeff,...\n");
+        fclose(fp);
+        exit(1);
+    }
+
+    int row = 0;
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        /* Skip blank lines and comments */
+        if (line[0] == '\n' || line[0] == '#' || line[0] == '\0') {
+            continue;
+        }
+
+        /* Trim trailing newline */
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n') {
+            line[len - 1] = '\0';
+        }
+
+        char *saveptr = NULL;
+
+        /* Column 1: asid */
+        char *token = strtok_r(line, ",", &saveptr);
+        if (!token) {
+            fprintf(stderr, "Error: asid_info.csv row %d: failed to parse asid\n", row);
+            fclose(fp);
+            exit(1);
+        }
+        uint64_t asid = strtoull(token, NULL, 10);
+        if (asid > 0xFFFF) {
+            fprintf(stderr,
+                    "Error: asid_info.csv row %d: ASID %lu exceeds 16-bit range\n",
+                    row, asid);
+            fclose(fp);
+            exit(1);
+        }
+
+        asid_coeff_t *entry = g_new0(asid_coeff_t, 1);
+
+        /* Columns 2–7: the 6 bx_* coefficients */
+        const char *coeff_names[] = {
+            "bx_private_icache_miss_coeff",
+            "bx_private_dcache_miss_coeff",
+            "bx_shared_cache_miss_coeff",
+            "bx_bp_miss_coeff",
+            "bx_drain_store_buffer_coeff",
+            "bx_instruction_coeff"
+        };
+        uint32_t *coeffs[] = {
+            &entry->bx_private_icache_miss_coeff,
+            &entry->bx_private_dcache_miss_coeff,
+            &entry->bx_shared_cache_miss_coeff,
+            &entry->bx_bp_miss_coeff,
+            &entry->bx_drain_store_buffer_coeff,
+            &entry->bx_instruction_coeff
+        };
+
+        for (int i = 0; i < 6; i++) {
+            token = strtok_r(NULL, ",", &saveptr);
+            if (!token) {
+                fprintf(stderr,
+                        "Error: asid_info.csv row %d: failed to parse %s\n",
+                        row, coeff_names[i]);
+                g_free(entry);
+                fclose(fp);
+                exit(1);
+            }
+            double val = strtod(token, NULL);
+            if (val < 0) {
+                fprintf(stderr,
+                        "Error: asid_info.csv row %d: %s must be non-negative, got %f\n",
+                        row, coeff_names[i], val);
+                g_free(entry);
+                fclose(fp);
+                exit(1);
+            }
+            /* Fixed-point: multiply by 1000 and round */
+            uint64_t fixed = (uint64_t)(val * 1000.0 + 0.5);
+            if (fixed > UINT32_MAX) {
+                fprintf(stderr,
+                        "Error: asid_info.csv row %d: %s value %f overflows uint32 in fixed-point\n",
+                        row, coeff_names[i], val);
+                g_free(entry);
+                fclose(fp);
+                exit(1);
+            }
+            *coeffs[i] = (uint32_t)fixed;
+        }
+
+        g_hash_table_insert(asid_coeff_table,
+                            GUINT_TO_POINTER((guint)asid),
+                            entry);
+        row++;
+    }
+
+    fclose(fp);
+    fprintf(stderr, "Loaded %d ASID entries from %s\n", row, file_name);
+}

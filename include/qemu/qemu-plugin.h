@@ -602,6 +602,19 @@ void qemu_plugin_register_flush_cb(qemu_plugin_id_t id,
 void qemu_plugin_register_atexit_cb(qemu_plugin_id_t id,
                                     qemu_plugin_udata_cb_t cb, void *userdata);
 
+/**
+ * qemu_plugin_on_exit() - plugin requests QEMU to prepare for exit
+ * @id: plugin ID
+ *
+ * A plugin that is about to call exit() should call this function first,
+ * giving QEMU a chance to flush and close any persistent resources
+ * (such as the bxdb database) before the process terminates.
+ *
+ * This must be called before the plugin calls exit() or equivalent;
+ * once called the plugin should not make further use of QEMU services.
+ */
+void qemu_plugin_on_exit(qemu_plugin_id_t id);
+
 /* returns -1 in user-mode */
 int qemu_plugin_n_vcpus(void);
 
@@ -828,6 +841,8 @@ typedef enum qemu_plugin_snapshot_format_t {
   QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_ZSTD = 2,
   QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE = 4, // A complete snapshot, with zstd compression. <name>.state.zstd and <name>.basemem.zstd will be created.
   QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA = 5, // an incremental snapshot based on the prior snapshot. <name>.state.zstd, <name>.deltamem.list, and <name>.deltamem.bin will be created.
+  QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_BASE_NO_BXDB = 6,
+  QEMU_PLUGIN_SNAPSHOT_FORMAT_EXTERNAL_INCREMENTAL_DELTA_NO_BXDB = 7,
 } qemu_plugin_snapshot_format_t;
 
 /**
@@ -937,8 +952,129 @@ typedef void (*qemu_plugin_on_deliver_interrupt_cb_t)(
 PF_API bool qemu_plugin_register_on_deliver_interrupt_cb(
     qemu_plugin_on_deliver_interrupt_cb_t cb);
 
+typedef void (*qemu_plugin_on_deliver_interrupt_with_time_cb_t)(
+    uint32_t vcpu_idx, uint64_t src_time, bool is_from_core);
+
+PF_API bool qemu_plugin_register_on_deliver_interrupt_with_time_cb(
+    qemu_plugin_on_deliver_interrupt_with_time_cb_t cb);
+
+PF_API uint32_t *qemu_plugin_get_global_quantum_generation_ptr(void);
+
+PF_API uint64_t *qemu_plugin_get_vcpu_target_time_ptr(uint32_t cpu_idx);
+
+PF_API uint32_t *qemu_plugin_get_vcpu_waiting_for_quantum_ptr(uint32_t cpu_idx);
 
 PF_API bool qemu_plugin_register_plugin_quantum_generation_increment_variable(
     uint64_t *var);
+
+typedef void (*qemu_plugin_save_statistics_callback_t)(const char *file_name);
+
+PF_API bool qemu_plugin_register_save_statistics_callback(
+    qemu_plugin_save_statistics_callback_t cb);
+
+/**
+ * Maximum number of CPU cores supported for plugin statistics
+ */
+#define QEMU_PLUGIN_MAX_CORES 256
+
+/**
+ * struct qemu_plugin_exposed_statistics - Performance statistics structure
+ *
+ * This structure contains counters for various performance events that
+ * can be directly updated by plugins for performance modeling.
+ * The structure is aligned to 64 bytes to prevent false sharing between cores.
+ */
+struct __attribute__((aligned(64))) qemu_plugin_exposed_statistics {
+    union {
+        struct {
+            uint32_t private_icache_miss;    /**< Private instruction cache misses */
+            uint32_t private_dcache_miss;    /**< Private data cache misses (load + PTW + store) */
+            uint32_t shared_cache_miss;      /**< Shared (LLC) cache misses */
+            uint32_t bp_miss;                /**< Branch prediction misses */
+            uint32_t drain_store_buffer;     /**< Store buffer drain events (DSB, acquire) */
+            uint32_t instruction;            /**< Instructions executed (user + kernel) */
+        };
+        uint32_t arr[6]; /**< Array view for vectorised accumulation loop */
+    };
+};
+
+/**
+ * qemu_plugin_get_exposed_statistics() - Get pointer to statistics for a core
+ * @core_idx: The CPU core index (0 to QEMU_PLUGIN_MAX_CORES-1)
+ *
+ * Returns a pointer to the statistics structure for the specified core,
+ * or NULL if the core index is out of range.
+ *
+ * The plugin can directly increment the counters in this structure.
+ * Each core's structure is aligned to prevent false sharing.
+ *
+ * Note: Statistics are zeroed when plugins are loaded.
+ */
+struct qemu_plugin_exposed_statistics *qemu_plugin_get_exposed_statistics(uint32_t core_idx);
+
+/**
+ * struct qemu_plugin_timing_info - Host-side timing breakdown for checkpoint operations
+ *
+ * This structure accumulates wall-clock time (CLOCK_MONOTONIC_RAW)
+ * spent on checkpoint save/load operations and their sub-components,
+ * broken down into RAM (bxdb), uArch state (plugin callback), and total.
+ * All values are in nanoseconds. The structure is aligned to 64 bytes
+ * to prevent false sharing.
+ *
+ * Plugins read this structure via qemu_plugin_get_timing_info()
+ * and may print it as a final timing report at simulation exit.
+ */
+struct __attribute__((aligned(64))) qemu_plugin_timing_info {
+    uint64_t total_save_time_ns;
+    uint64_t total_load_time_ns;
+    uint64_t save_memory_state_time_ns;
+    uint64_t load_memory_state_time_ns;
+    uint64_t save_uarch_state_time_ns;
+    uint64_t load_uarch_state_time_ns;
+    uint64_t uffd_pages_loaded;
+    uint64_t save_dirty_snapshot_time_ns;
+    uint64_t save_qemu_savevm_state_time_ns;
+    uint64_t save_pre_work_time_ns;
+    uint64_t save_bdrv_snapshot_time_ns;
+
+    /* Raw checkpoint per-page fetch breakdown */
+    uint64_t raw_ckpt_total_ns;     /* total time inside raw_ckpt_fetch_page */
+    uint64_t raw_ckpt_index_ns;     /* binary search across all ondemand files */
+    uint64_t raw_ckpt_copy_ns;      /* memcpy from mmap into buffer */
+    uint64_t raw_ckpt_pages_found;  /* pages found and copied */
+    uint64_t raw_ckpt_pages_zero;   /* pages not stored (logically zero) */
+    uint64_t raw_ckpt_files_searched;  /* cumulative # of ondemand files iterated */
+    uint64_t raw_ckpt_bsearch_steps;   /* cumulative # of binary-search loop iterations */
+
+    /* BXDB-vs-RAW dual-test harness counters */
+    uint64_t dual_bxdb_fetch_total_ns; /* total ns in bxdb_ckpt_fetch_page */
+    uint64_t dual_raw_fetch_total_ns;  /* total ns in raw_ckpt_fetch_page */
+    uint64_t dual_pages_fetched;       /* # of pages tested in dual mode */
+    uint64_t dual_mismatches;          /* # of pages where bxdb != raw */
+};
+
+/**
+ * qemu_plugin_get_timing_info() - Get pointer to the global timing info
+ *
+ * Returns a pointer to the shared timing information structure.
+ * The structure is zero-initialised when QEMU starts and accumulates
+ * time across all checkpoint operations during the simulation.
+ */
+struct qemu_plugin_timing_info *qemu_plugin_get_timing_info(void);
+
+typedef void(*qemu_plugin_record_statistics_cb_t)(uint64_t core_idx, uint64_t what_statistics, uint64_t increment);
+
+/**
+ * qemu_plugin_record_statistics() - Record a statistic increment for a core
+ * @core_idx: The CPU core index (0 to QEMU_PLUGIN_MAX_CORES-1)
+ * @what_statistics: The statistic type to increment
+ * @increment: The amount to increment the statistic by
+ *
+ * This function records a statistic increment for the specified core.
+ * It is intended for use by plugins that do not have access to the
+ * exposed statistics structure directly.
+ */
+PF_API bool qemu_plugin_register_record_statistics_cb(qemu_plugin_record_statistics_cb_t cb);
+
 
 #endif /* QEMU_QEMU_PLUGIN_H */

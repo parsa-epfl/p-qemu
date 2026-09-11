@@ -1,0 +1,120 @@
+/*
+ * BSD 3-Clause License
+ *
+ * Copyright (c) 2026, Parallel Systems Architecture Laboratory (PARSA), EPFL.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ *    list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the PARSA, EPFL
+ *    nor the names of its contributors may be used to endorse or promote
+ *    products derived from this software without specific prior written
+ *    permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/**
+ * @file include/sysemu/asid-coeff.h
+ *
+ * Per-ASID IPC model coefficient table.
+ *
+ * Provides a global hash table mapping ARM ASID values (uint16_t, stored as
+ * GUINT_TO_POINTER keys) to per-ASID bx_* coefficients.  The table is
+ * populated once at startup from "asid_info.csv" (optional) and is read-only
+ * thereafter, making concurrent reads from multiple vCPU threads safe.
+ */
+
+#ifndef SYSEMU_ASID_COEFF_H
+#define SYSEMU_ASID_COEFF_H
+
+#include "qemu/osdep.h"
+#include <glib.h>
+
+/**
+ * bx_coeff_t - IPC model coefficient set (6 fixed-point values).
+ *
+ * All values are stored as fixed-point integers (value * 1000).
+ * The anonymous union exposes both named-field access (for readability
+ * at init/debug sites) and an arr[6] view (for the vectorised hot loop).
+ *
+ * Field order in arr[] matches the declaration order of the named fields
+ * AND the field order of qemu_plugin_exposed_statistics — the hot loop in
+ * quantum_flush_current_stats() pairs them by index, so do not reorder
+ * either struct without updating the other.
+ */
+typedef struct {
+    union {
+        struct {
+            uint32_t bx_private_icache_miss_coeff;
+            uint32_t bx_private_dcache_miss_coeff;
+            uint32_t bx_shared_cache_miss_coeff;
+            uint32_t bx_bp_miss_coeff;
+            uint32_t bx_drain_store_buffer_coeff;
+            uint32_t bx_instruction_coeff;
+        };
+        uint32_t arr[6];
+    };
+} bx_coeff_t;
+
+/* Backward-compatible alias — existing ASID-table callers are unchanged. */
+typedef bx_coeff_t asid_coeff_t;
+
+/**
+ * tcg_parse_asid_info_file - load per-ASID coefficients from a CSV file.
+ * @file_name: path to the CSV file (e.g. "asid_info.csv").
+ *
+ * Expected CSV header:
+ *   asid,bx_private_icache_miss_coeff,...,bx_instruction_coeff
+ *
+ * If the file does not exist the call is silently ignored and
+ * tcg_get_asid_coeff_table() will return NULL.  Must be called
+ * single-threaded before any vCPU thread is started.
+ */
+void tcg_parse_asid_info_file(const char *file_name);
+
+/**
+ * tcg_get_asid_coeff_table - return the global ASID coefficient table.
+ *
+ * Returns the GHashTable populated by tcg_parse_asid_info_file(), or NULL if
+ * the file was not loaded.  Keys are GUINT_TO_POINTER(asid) (uint16_t cast to
+ * guint); values are heap-allocated asid_coeff_t pointers owned by the table.
+ *
+ * The table is write-once (populated at init) so concurrent reads are safe.
+ */
+GHashTable *tcg_get_asid_coeff_table(void);
+
+/**
+ * quantum_flush_current_stats - deduct accumulated stats into the quantum budget.
+ * @cpu: the CPUState whose statistics should be flushed.
+ *
+ * Computes required_picoseconds from the current plugin-exposed statistics
+ * using the core's current bx_* coefficients, zeroes the statistics, updates
+ * target_cycle_on_instruction and cpu_virtual_time[].vts, and subtracts from
+ * quantum_budget_in_picosecond.  Does NOT set quantum_budget_depleted — the
+ * caller is responsible for checking the budget afterward.
+ *
+ * Safe to call from translated-code context (TTBR write handlers) where
+ * current_cpu is valid.  Uses the passed @cpu parameter throughout.
+ */
+struct CPUState;
+void quantum_flush_current_stats(struct CPUState *cpu);
+
+#endif /* SYSEMU_ASID_COEFF_H */

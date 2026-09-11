@@ -11,6 +11,8 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/plugin-pf.h"
+#include "hw/core/cpu.h"
 #include "trace.h"
 #include "gicv3_internal.h"
 
@@ -908,6 +910,17 @@ void gicv3_dist_set_irq(GICv3State *s, int irq, int level)
         /* 0->1 edges latch the pending bit for edge-triggered interrupts */
         if (gicv3_gicd_edge_trigger_test(s, irq)) {
             gicv3_gicd_pending_set(s, irq);
+        }
+
+        // Interrupt from devices (raised here, not during priority rescan).
+        GICv3CPUState *cs = s->gicd_irouter_target[irq];
+        if (cs) {
+            if (pf_on_deliver_interrupt_cb) {
+                pf_on_deliver_interrupt_cb(cs->cpu->cpu_index);
+            }
+            if (pf_on_deliver_interrupt_with_time_cb) {
+                pf_on_deliver_interrupt_with_time_cb(cs->cpu->cpu_index, cs->cpu->vts, false);
+            }
         }
     }
 

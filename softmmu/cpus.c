@@ -456,12 +456,24 @@ void qemu_wait_io_event(CPUState *cpu)
             // The CPU has been stopped by the system (e.g., via pause_all_vcpus).
             // Wait until we're resumed.
             qemu_cond_wait(cpu->halt_cond, &qemu_global_mutex);
-            cpu->quantum_budget = 0; // force entering the barrier.
+            cpu->quantum_budget_in_picosecond = 0; // force entering the barrier.
             cpu->quantum_budget_depleted = 1;
         } else if (!cpu->stop) {
             // CPU is running normally (not being asked to stop).
             bool affiliated_with_quantum = cpu->ip100ns != 0 && quantum_enabled();
             if (affiliated_with_quantum) {
+                // record the idle time.
+                record_statistics_to_plugin(cpu->cpu_index, 4, cpu->quantum_budget_in_picosecond / 1000);
+                /*
+                 * first_cpu is the timekeeper: bank the unused (idle) portion
+                 * of its budget into the virtual clock so time keeps advancing
+                 * while first_cpu is halted, and run any timer now due.  The
+                 * BQL is held here, so quantum_run_due_timers() won't relock.
+                 */
+                if (cpu == first_cpu && cpu->quantum_budget_in_picosecond > 0) {
+                    advance_quantum_time_ps(cpu->quantum_budget_in_picosecond);
+                    quantum_run_due_timers();
+                }
                 cpu->quantum_budget_depleted = 1;
                 break; // we need to break in order to wait for the barrier.
             } else {
@@ -602,7 +614,7 @@ void pause_all_vcpus(void)
 
     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, false);
 
-    if (quantum_enabled()) {
+    if (quantum_enabled() && !quantum_rr_enabled()) {
         // In quantum mode, set a flag in the barrier so all vCPUs will pause
         // together at the end of the current quantum, instead of sending
         // individual pause requests that would be polled inefficiently.

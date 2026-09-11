@@ -1133,6 +1133,9 @@ void gicv3_redist_set_irq(GICv3CPUState *cs, int irq, int level)
         if (pf_on_deliver_interrupt_cb) {
           pf_on_deliver_interrupt_cb(cs->cpu->cpu_index);
         }
+        if (pf_on_deliver_interrupt_with_time_cb) {
+          pf_on_deliver_interrupt_with_time_cb(cs->cpu->cpu_index, cs->cpu->vts, false);
+        }
     }
 
     gicv3_redist_update(cs);
@@ -1168,6 +1171,9 @@ void gicv3_redist_send_sgi(GICv3CPUState *cs, int grp, int irq, bool ns)
     // Interrupt from SGI.
     if (pf_on_deliver_interrupt_cb) {
       pf_on_deliver_interrupt_cb(cs->cpu->cpu_index);
+    }
+    if (pf_on_deliver_interrupt_with_time_cb) {
+      pf_on_deliver_interrupt_with_time_cb(cs->cpu->cpu_index, current_cpu->vts, true);
     }
 
     /* OK, we can accept the SGI */

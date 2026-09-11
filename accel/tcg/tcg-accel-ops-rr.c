@@ -173,70 +173,11 @@ static int rr_cpu_count(void)
     return cpu_count;
 }
 
-typedef struct core_meta_info_t {
-    uint64_t ip100ns;
-    uint64_t affinity_core_idx;
-} core_meta_info_t;
-
+// Core info table for round-robin mode
 static core_meta_info_t core_info_table[256];
 
 void rrtcg_initialize_core_info_table(const char *file_name) {
-    for(uint64_t i = 0; i < 256; ++i) {
-        core_info_table[i].ip100ns = 0;
-        core_info_table[i].affinity_core_idx = i;
-    }
-
-    // Load the IPC from the file. Each line is a integer and suggests the IPC.
-    FILE *fp = fopen(file_name, "r");
-    if (!fp) {
-        if (!qemu_tcg_mttcg_enabled()) {
-            printf("IPC file (%s) is not found. It is needed under the round-robin mode.\n", file_name);
-            exit(1);
-        } else {
-            return;
-        }
-
-    }
-
-    char line[1024];
-    int core_id = 0;
-
-    // The first line is the header.
-    // The header is "ipc,affinity_core_idx"
-    // do a comparison with the header.
-    assert(fgets(line, 1024, fp) != NULL);
-    bool parse_affinity = false;
-    if (strcmp(line, "ipns,affinity_core_idx\n") == 0) {
-        parse_affinity = true;
-    } else if (strcmp(line, "ipns\n") == 0) {
-        parse_affinity = false;
-    } else {
-        printf("File %s is not valid for setting up the IPNS for quantum.\n", file_name);
-        abort();
-    }
-
-    // Now, read every line and fill the structure.
-    while(fgets(line, 1024, fp) != NULL) {
-        if (parse_affinity) {
-            char *token = strtok(line, ",");
-            double ipns = strtod(token, NULL);
-            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
-            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
-            token = strtok(NULL, ",");
-            core_info_table[core_id].affinity_core_idx = atoi(token);
-        } else {
-            double ipns = strtod(line, NULL);
-            core_info_table[core_id].ip100ns = (uint64_t)(ipns * 100);
-            assert(core_info_table[core_id].ip100ns > 0 && "IPNS should be greater than 0");
-            core_info_table[core_id].affinity_core_idx = core_id;
-        }
-
-        qemu_log("Core%u Quantum Count: %lu ns, %lu instructions \n", core_id, icount_switch_period, icount_switch_period * core_info_table[core_id].ip100ns / 100);
-
-        core_id += 1;
-    }
-
-    fclose(fp);
+    tcg_parse_core_info_file(file_name, core_info_table, 256);
 }
 
 
@@ -278,10 +219,15 @@ static void *rr_cpu_thread_fn(void *arg)
             qemu_wait_io_event_common(cpu);
 
             // Set up the ipc value for this processor.
-            cpu->ip100ns = core_info_table[cpu->cpu_index].ip100ns;
+            cpu->ip100ns = (uint64_t)(core_info_table[cpu->cpu_index].ipns * 100);
+            cpu->active_coeffs = core_info_table[cpu->cpu_index].coeffs;
+
+            cpu->is_ipc_model = !core_model_is_constant(&core_info_table[cpu->cpu_index]);
+
+            cpu->default_coeffs = cpu->active_coeffs;
 
             // No quantum is required at the beginning.
-            cpu->quantum_required = 0;
+            cpu->last_tb_instruction_count_for_quantum = 0;
         }
     }
 
@@ -345,25 +291,28 @@ static void *rr_cpu_thread_fn(void *arg)
             for (int i = 0; i < rr_cpu_count(); i++) {
                 CPUState *cpu = first_cpu;
                 while (cpu) {
-                    cpu_virtual_time[cpu->cpu_index].vts += cpu->quantum_required * 10000 / cpu->ip100ns;
-                    cpu->quantum_required = 0;
+                    cpu->vts += cpu->last_tb_instruction_count_for_quantum * 10000 / cpu->ip100ns;
+                    cpu->last_tb_instruction_count_for_quantum = 0;
                     cpu = CPU_NEXT(cpu);
                 }
             }
 
-            // SFind the maximum vtime and synchronize the time among all cores.
+            // Find the maximum vtime and synchronize the time among all cores.
             uint64_t max_vtime = 0;
             for (int i = 0; i < rr_cpu_count(); i++) {
-                uint64_t vtime = cpu_virtual_time[i].vts;
+                uint64_t vtime = cpu->vts;
                 if (vtime > max_vtime) {
                     max_vtime = vtime;
                 }
+                cpu = CPU_NEXT(cpu);
             }
 
             // Synchronize the time.
-            for (int i = 0; i < rr_cpu_count(); i++) {
-                assert(cpu_virtual_time[i].vts <= max_vtime);
-                cpu_virtual_time[i].vts = max_vtime;
+            cpu = first_cpu;
+            while (cpu) {
+                assert(cpu->vts <= max_vtime);
+                cpu->vts = max_vtime;
+                cpu = CPU_NEXT(cpu);
             }
 
 
@@ -384,7 +333,7 @@ static void *rr_cpu_thread_fn(void *arg)
 
                 qemu_mutex_unlock_iothread();
                 if (icount_enabled()) {
-                    uint64_t icount = (cpu_budget * core_info_table[cpu->cpu_index].ip100ns) / 100;
+                    uint64_t icount = (uint64_t)(cpu_budget * core_info_table[cpu->cpu_index].ipns);
                     // assert(icount > 0);
                     icount_prepare_for_run(cpu, icount);
                 }

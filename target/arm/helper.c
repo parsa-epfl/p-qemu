@@ -26,6 +26,8 @@
 #include "sysemu/cpu-timers.h"
 #include "sysemu/kvm.h"
 #include "sysemu/tcg.h"
+#include "sysemu/quantum.h"
+#include "sysemu/asid-coeff.h"
 #include "qapi/error.h"
 #include "qemu/guest-random.h"
 #ifdef CONFIG_TCG
@@ -4143,13 +4145,82 @@ static void vmsa_tcr_el12_write(CPUARMState *env, const ARMCPRegInfo *ri,
 static void vmsa_ttbr_write(CPUARMState *env, const ARMCPRegInfo *ri,
                             uint64_t value)
 {
+    /* Hoist the ARMCPU pointer — used by both the TLB flush and the new
+     * ASID switching logic below, avoiding a duplicate declaration. */
+    ARMCPU *armcpu = env_archcpu(env);
+
     /* If the ASID changes (with a 64-bit write), we must flush the TLB.  */
     if (cpreg_field_is_64bit(ri) &&
         extract64(raw_read(env, ri) ^ value, 48, 16) != 0) {
-        ARMCPU *cpu = env_archcpu(env);
-        tlb_flush(CPU(cpu));
+        tlb_flush(CPU(armcpu));
     }
     raw_write(env, ri, value);
+
+    /*
+     * Per-ASID IPC model coefficient switching.
+     *
+     * When quantum mode is active and this vCPU uses the ipc-model, we
+     * maintain a per-ASID set of bx_* coefficients loaded from
+     * asid_info.csv.  On every write to TTBR0_EL1 or TTBR1_EL1 that
+     * affects the *active* ASID we:
+     *   1. Flush accumulated statistics using the *old* coefficients so
+     *      they are not billed at the wrong rate.
+     *   2. Look up the new ASID in the global hash table.
+     *   3. Install the matching coefficients (or fall back to the
+     *      per-core defaults from core_info.csv if not found).
+     */
+    CPUState *cs = CPU(armcpu);
+    if (!quantum_enabled() || !cs->is_ipc_model) {
+        return;
+    }
+
+    /*
+     * TCR_EL1.A1 (bit 22) selects which TTBR holds the active ASID:
+     *   A1 = 0  →  TTBR0_EL1 holds the ASID
+     *   A1 = 1  →  TTBR1_EL1 holds the ASID
+     */
+    uint64_t tcr = env->cp15.tcr_el[1];
+    bool a1 = extract64(tcr, 22, 1);
+
+    /*
+     * Only update coefficients when the register being written IS the
+     * active TTBR.  Writing the inactive TTBR does not change the ASID
+     * that the CPU is currently using.
+     *
+     * ri->fieldoffset has already been resolved to the correct security-
+     * bank offset (NS for normal EL1 execution), so compare directly.
+     */
+    bool writing_ttbr0 =
+        (ri->fieldoffset == offsetof(CPUARMState, cp15.ttbr0_ns));
+    bool active_is_ttbr0 = !a1;
+
+    if (active_is_ttbr0 != writing_ttbr0) {
+        /* Writing the inactive TTBR — active ASID unchanged, nothing to do. */
+        return;
+    }
+
+    /*
+     * The new ASID is extracted directly from the value being written
+     * (bits [63:48]).  raw_write() has already committed the value but
+     * reading from 'value' is equivalent and avoids an extra memory access.
+     */
+    uint16_t new_asid = (uint16_t)extract64(value, 48, 16);
+
+    /* Step 1: flush stats accumulated under the old coefficients. */
+    quantum_flush_current_stats(cs);
+
+    /* Step 2 & 3: look up ASID and install coefficients. */
+    GHashTable *asid_table = tcg_get_asid_coeff_table();
+    asid_coeff_t *coeffs = asid_table
+        ? g_hash_table_lookup(asid_table, GUINT_TO_POINTER((guint)new_asid))
+        : NULL;
+
+    if (coeffs) {
+        cs->active_coeffs = *coeffs;
+    } else {
+        /* ASID not found — fall back to the per-core defaults. */
+        cs->active_coeffs = cs->default_coeffs;
+    }
 }
 
 static void vmsa_tcr_ttbr_el2_write(CPUARMState *env, const ARMCPRegInfo *ri,

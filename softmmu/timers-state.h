@@ -55,8 +55,13 @@ typedef struct TimersState {
     /* Add by Shanqing. the vm_clock from the recent snapshot */
     int64_t virtual_clock_snapshot;
 
-    /* The time offset given by the quantum. It is updated by the quantum barrier and cleared on starting ticks. */
-    int64_t quantum_set_time;
+    /*
+     * The time offset contributed by the quantum mechanism, in PICOSECONDS.
+     * It is advanced by first_cpu as it consumes its quantum budget, and is
+     * cleared on starting ticks.  It is converted to nanoseconds (/1000) only
+     * when the virtual clock is read, so the accumulation itself is drift-free.
+     */
+    int64_t quantum_set_time_ps;
 
     /* Only written by TCG thread */
     int64_t qemu_icount;

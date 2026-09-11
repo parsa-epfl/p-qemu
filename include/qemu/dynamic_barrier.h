@@ -38,9 +38,6 @@ typedef struct {
     } return_value;
     uint64_t __padding5__[7];
 
-    uint64_t timer_update_request;
-    int64_t next_virtual_time_deadline_in_ns;
-
     uint64_t last_timestamp;
     uint64_t total_diff;
     time_histogram_t *histogram[128]; // each core has its own histogram.

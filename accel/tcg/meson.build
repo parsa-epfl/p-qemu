@@ -20,7 +20,7 @@ specific_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'CONFIG_TCG'], if_true: files(
   'cputlb.c',
   'monitor.c',
   'helper-quantum.c',
-  'helper-profile-one-instruction.c'
+  'helper-profile-one-instruction.c',
 ))
 
 tcg_module_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'CONFIG_TCG'], if_true: files(
@@ -29,4 +29,5 @@ tcg_module_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'CONFIG_TCG'], if_true: files(
   'tcg-accel-ops-icount.c',
   'tcg-accel-ops-rr.c',
   'tcg-accel-ops-quantum.c',
+  'tcg-accel-ops-quantum-rr.c',
 ))

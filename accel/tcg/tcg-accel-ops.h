@@ -13,10 +13,27 @@
 #define TCG_ACCEL_OPS_H
 
 #include "sysemu/cpus.h"
+#include "sysemu/asid-coeff.h"
+
+/* Core metadata information from core_info.csv */
+typedef struct core_meta_info_t {
+    int64_t host_core_idx;  // Host CPU core for affinity
+    double ipns;
+    bool is_constant;       // true if model_type == "constant"
+    bx_coeff_t coeffs;      // IPC model coefficients (fixed-point: value * 1000)
+} core_meta_info_t;
+
+/* Check if model is constant type */
+static inline bool core_model_is_constant(const core_meta_info_t *info) {
+    return info->is_constant;
+}
 
 void tcg_cpus_destroy(CPUState *cpu);
 int tcg_cpus_exec(CPUState *cpu);
 void tcg_handle_interrupt(CPUState *cpu, int mask);
 void tcg_cpu_init_cflags(CPUState *cpu, bool parallel);
+
+/* Parse core_info.csv file and fill the core_info_table */
+void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info_table, int max_cores);
 
 #endif /* TCG_ACCEL_OPS_H */

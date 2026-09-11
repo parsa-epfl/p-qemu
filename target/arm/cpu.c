@@ -18,8 +18,8 @@
  * <http://www.gnu.org/licenses/gpl-2.0.html>
  */
 
-#include "qemu/histogram.h"
 #include "qemu/osdep.h"
+#include "qemu/plugin-pf.h"
 #include "qemu/qemu-print.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
@@ -1626,6 +1626,12 @@ static uint64_t arm_cpu_query_local_timer_deadline(CPUState *cs) {
     return deadline;
 }
 
+static void pf_arm_cpu_el_change_hook(ARMCPU *cpu, void *ignored){
+    CPUState *cs = CPU(cpu);
+    // notify the plugin that the
+    record_statistics_to_plugin(cs->cpu_index, 3, 1);
+}
+
 static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
 {
     CPUState *cs = CPU(dev);
@@ -2288,6 +2294,9 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
         if (cpu_isar_feature(aa64_mte, cpu)) {
             assert(dcz_blocklen >= 2 * TAG_GRANULE);
         }
+
+        // register a hook for el_change to notify the plugin that we may want to flush the pipeline.
+        arm_register_el_change_hook(cpu, &pf_arm_cpu_el_change_hook, 0);
     }
 
     qemu_init_vcpu(cs);
