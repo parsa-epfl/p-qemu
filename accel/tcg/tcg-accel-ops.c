@@ -278,8 +278,7 @@ void tcg_parse_core_info_file(const char *file_name, core_meta_info_t *core_info
     // Check for old format (2 columns)
     if (strstr(line, "ipns") != NULL && strstr(line, "affinity_core_idx") != NULL) {
         fprintf(stderr, "Error: core_info.csv uses deprecated 2-column format.\n");
-        fprintf(stderr, "Please migrate to new coefficient format using:\n");
-        fprintf(stderr, "  python migrate_core_info.py <input> <output>\n");
+        fprintf(stderr, "Please migrate to the 9-column coefficient format.\n");
         fclose(fp);
         exit(2);
     }
